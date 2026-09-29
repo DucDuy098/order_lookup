@@ -1,0 +1,6 @@
+# Deploy only the site and its API functions; everything else stays out of the public site.
+/*
+!index.html
+!api
+!package.json
+!package-lock.json
