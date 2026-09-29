@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+service_account_key.json
+
+# Vercel / local tooling
+.vercel/
+.claude/settings.local.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,7 @@
+STT,Tên bên đi đơn (đổi lại cho dễ nhớ),Sheet URL,Tên tab (để trống = tab đầu tiên),Cột Order ID (đúng tên ở dòng 1 sheet gốc),Cột Cost (đúng tên ở dòng 1 sheet gốc),Ghi chú
+1,Bên 1,https://docs.google.com/spreadsheets/d/1F6QhTwsIPEZGyWI5ZJ5M_v2r9yVJ6x3kkaB0pEXat8k/edit,,Order ID,$,Sheet có vài cột số lạ (dòng tổng công thức) - kiểm tra kỹ đúng tên cột Cost muốn lấy (USD hay VNĐ)
+2,Bên 2,https://docs.google.com/spreadsheets/d/1_Iyxd2mr9sHRdvft2vlgBBACzooU1V4akVqsGdRaCMY/edit,,Order ID,$,Kiểm tra lại đúng tên cột Cost
+3,Bên 3,https://docs.google.com/spreadsheets/d/1bCKMywXf2vXbMQrAnOWOJYNXrXV3Ai7xfpsM5fNeV7c/edit,,Mã đơn,Tổng tiền,Kiểm tra lại đúng chính tả cột Tổng tiền trong sheet gốc
+4,Bên 4,https://docs.google.com/spreadsheets/d/1JS9hn0gOaCnazjpjdquR2xPzAfg7xcQrZy5L36Nhy90/edit,,,,KHÔNG MỞ ĐƯỢC - kiểm tra lại link hoặc share quyền xem/sửa cho ducduynd098@gmail.com rồi điền lại 2 cột Order ID/Cost
+5,Bên 5,https://docs.google.com/spreadsheets/d/1HtjHS6teg90lrRNjrcWlsCNItOOeyArJX03Cfo9ABoo/edit,,Order ID,$,Kiểm tra lại đúng tên cột Cost (USD hay VNĐ)
+6,(thêm bên mới tại đây),,,,,Copy 1 dòng ở trên rồi sửa lại khi có thêm sheet mới

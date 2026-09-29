@@ -1,0 +1,152 @@
+/**
+ * TRA CỨU COST THEO ORDER ID - dùng ngay trong file "Fullfill Check"
+ * (tự động quét qua TẤT CẢ các tab tháng: T8, T9, T10...)
+ * ---------------------------------------------------------------
+ * CÀI ĐẶT:
+ * 1. Mở file "Fullfill Check" trên Google Sheets.
+ * 2. Extensions (Tiện ích mở rộng) > Apps Script.
+ * 3. Xoá code mẫu, dán toàn bộ nội dung file này vào, bấm Save.
+ * 4. Quay lại Sheet, F5 để tải lại trang.
+ * 5. Sẽ có thêm tab mới tên "Tra cứu" và menu "🔍 Cost Tool" trên thanh menu.
+ *
+ * CÁCH DÙNG (2 cách, chọn 1):
+ * A) Nhanh nhất: qua tab "Tra cứu", gõ Order ID vào ô B1 rồi Enter
+ *    -> kết quả tự hiện bên dưới, không cần bấm gì thêm.
+ * B) Hoặc bấm menu "🔍 Cost Tool" > "Tìm Order ID" -> gõ Order ID vào hộp thoại.
+ *
+ * Lần đầu dùng, Google sẽ hỏi cấp quyền (Authorize) vì đây là script bạn tự cài -> chọn
+ * tài khoản của bạn -> Advanced -> Go to ... (unsafe) -> Allow.
+ *
+ * Script tự tìm dòng tiêu đề thật (vì dòng 1 nhiều tab là dòng tổng công thức,
+ * tiêu đề thật thường ở dòng 2) và tự nhận diện cột Order ID (ODER/Order ID/Mã đơn)
+ * trong từng tab, nên không cần khai báo cấu hình gì thêm.
+ */
+
+var TRA_CUU_SHEET_NAME = 'Tra cứu';
+var ORDER_ID_HEADER_PATTERN = /(oder|order\s*id|mã\s*đơn)/i;
+var COST_HEADER_PATTERN = /(giá|cost|tiền|price)/i;
+
+function onOpen() {
+  ensureTraCuuSheet();
+  SpreadsheetApp.getUi()
+    .createMenu('🔍 Cost Tool')
+    .addItem('Tìm Order ID', 'timOrderIdViaPrompt')
+    .addToUi();
+}
+
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sheet = e.range.getSheet();
+    if (sheet.getName() !== TRA_CUU_SHEET_NAME) return;
+    if (e.range.getA1Notation() !== 'B1') return;
+    var orderId = String(e.value || '').trim();
+    if (!orderId) return;
+    runSearch(orderId);
+  } catch (err) {
+    // Simple trigger - tránh throw để không hiện lỗi khó chịu khi gõ nhầm ô
+  }
+}
+
+function timOrderIdViaPrompt() {
+  var ui = SpreadsheetApp.getUi();
+  var res = ui.prompt('Tìm Order ID', 'Nhập Order ID cần tìm cost:', ui.ButtonSet.OK_CANCEL);
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  var orderId = res.getResponseText().trim();
+  if (!orderId) return;
+  runSearch(orderId);
+  ui.alert('Đã tìm xong. Xem kết quả ở tab "' + TRA_CUU_SHEET_NAME + '".');
+}
+
+function ensureTraCuuSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(TRA_CUU_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(TRA_CUU_SHEET_NAME, 0);
+  }
+  if (sheet.getRange('A1').getValue() !== 'Nhập Order ID cần tìm:') {
+    sheet.getRange('A1').setValue('Nhập Order ID cần tìm:').setFontWeight('bold');
+    sheet.getRange('B1').setBackground('#fff2cc').setFontWeight('bold');
+    sheet.setColumnWidth(1, 220);
+    sheet.setColumnWidth(2, 500);
+  }
+  return sheet;
+}
+
+function runSearch(orderId) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var outSheet = ensureTraCuuSheet();
+
+  // Xoá kết quả cũ (giữ lại dòng 1 = ô nhập)
+  var lastRow = outSheet.getMaxRows();
+  if (lastRow > 2) {
+    outSheet.getRange(3, 1, lastRow - 2, Math.max(outSheet.getMaxColumns(), 2)).clearContent().setBackground(null);
+  }
+
+  var results = [];
+  var sheets = ss.getSheets();
+
+  sheets.forEach(function (sh) {
+    var name = sh.getName();
+    if (name === TRA_CUU_SHEET_NAME) return;
+
+    var data = sh.getDataRange().getValues();
+    if (!data.length) return;
+
+    // Tìm dòng tiêu đề thật trong 5 dòng đầu
+    var headerRowIdx = -1, orderColIdx = -1;
+    for (var r = 0; r < Math.min(5, data.length); r++) {
+      for (var c = 0; c < data[r].length; c++) {
+        if (ORDER_ID_HEADER_PATTERN.test(String(data[r][c]).trim())) {
+          headerRowIdx = r;
+          orderColIdx = c;
+          break;
+        }
+      }
+      if (headerRowIdx !== -1) break;
+    }
+    if (headerRowIdx === -1) return; // tab này không có cấu trúc order -> bỏ qua
+
+    var headerRow = data[headerRowIdx];
+
+    // Quét toàn bộ dòng dữ liệu bên dưới header tìm đúng Order ID
+    for (var rr = headerRowIdx + 1; rr < data.length; rr++) {
+      var cellVal = String(data[rr][orderColIdx] || '').trim();
+      if (cellVal === orderId) {
+        results.push({
+          tab: name,
+          rowNum: rr + 1,
+          header: headerRow,
+          row: data[rr]
+        });
+      }
+    }
+  });
+
+  // Ghi kết quả
+  var writeRow = 3;
+  if (!results.length) {
+    outSheet.getRange(writeRow, 1).setValue('Không tìm thấy Order ID "' + orderId + '" ở bất kỳ tab nào.');
+    return;
+  }
+
+  results.forEach(function (res) {
+    outSheet.getRange(writeRow, 1).setValue('=== Tab: ' + res.tab + '  |  Dòng ' + res.rowNum + ' ===').setFontWeight('bold').setBackground('#d9ead3');
+    writeRow++;
+    for (var i = 0; i < res.header.length; i++) {
+      var h = String(res.header[i] || '').trim();
+      if (!h) continue; // bỏ cột không có tiêu đề
+      var v = res.row[i];
+      var isCost = COST_HEADER_PATTERN.test(h);
+      outSheet.getRange(writeRow, 1).setValue(h + ':');
+      var valCell = outSheet.getRange(writeRow, 2).setValue(v);
+      if (isCost) {
+        outSheet.getRange(writeRow, 1, 1, 2).setBackground('#fce5cd').setFontWeight('bold');
+      }
+      writeRow++;
+    }
+    writeRow++; // dòng trống ngăn cách giữa các kết quả
+  });
+
+  outSheet.autoResizeColumn(1);
+}

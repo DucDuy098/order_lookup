@@ -1,0 +1,227 @@
+/**
+ * TỰ ĐỘNG ĐỒNG BỘ TẤT CẢ ĐƠN HÀNG RA 1 SHEET RIÊNG
+ * (giống hệt bảng "Tất cả đơn hàng" trên web ORDER NEXUS, nhưng tự chạy nền định kỳ,
+ *  không cần mở web)
+ * ---------------------------------------------------------------------------------
+ * CÀI ĐẶT (làm 1 lần, ~10 phút):
+ *
+ * 1. Tạo 1 Google Sheet MỚI (sheet này sẽ là nơi chứa kết quả tổng hợp), đặt tên tuỳ ý
+ *    (VD "Tổng hợp Đơn Hàng - Auto").
+ * 2. Menu Extensions (Tiện ích mở rộng) > Apps Script.
+ * 3. Xoá hết code mẫu trong Code.gs, dán TOÀN BỘ nội dung file này vào, bấm Save (biểu
+ *    tượng đĩa mềm).
+ * 4. Quay lại Google Sheet, tải lại trang (F5). Sẽ có thêm menu "🔄 Auto Sync" trên
+ *    thanh menu.
+ * 5. Bấm "🔄 Auto Sync" > "Tạo tab Config mẫu" — sẽ tự tạo 1 tab tên "Config" với đúng
+ *    5 cột cần điền.
+ * 6. Điền vào tab Config: MỖI DÒNG = 1 NGUỒN, COPY Y NGUYÊN thông tin đã cấu hình sẵn
+ *    trên web ORDER NEXUS (mục "Sheet nguồn"):
+ *      - Tên nguồn        -> đúng như "Tên" trên web (VD: BẾ BA, Keria, Huong P, Takuchi, LUCKY)
+ *      - Link Sheet        -> đúng link Google Sheet của nguồn đó
+ *      - Tab               -> để trống nếu web đang để "tất cả tab", hoặc gõ đúng tên
+ *                             tab như trên web (VD LUCKY: "T7, T8")
+ *      - Cột Order ID      -> đúng như "Cột Order ID" trên web (VD: "Order ID", "Mã đơn", hoặc chữ cột như "B")
+ *      - Cột Cost          -> đúng như "Cột Cost" trên web (VD: "Tổng tiền", hoặc chữ cột như "L", "G")
+ * 7. Bấm "🔄 Auto Sync" > "Chạy đồng bộ ngay" để chạy thử.
+ *    - Lần đầu Google sẽ hỏi cấp quyền (Authorize) -> chọn tài khoản của anh -> Advanced
+ *      -> Go to ... (unsafe) -> Allow. (An toàn vì đây là script do chính anh cài trên
+ *      sheet của mình.)
+ *    - Kết quả nằm ở tab "Tổng hợp". Nếu có lỗi đọc nguồn nào, xem chi tiết ở tab "Log lỗi".
+ * 8. Bấm "🔄 Auto Sync" > "Bật tự động mỗi giờ" để sheet tự cập nhật định kỳ, KỂ CẢ KHI
+ *    không mở web ORDER NEXUS, không mở sheet này. Muốn tắt thì bấm "Tắt tự động".
+ *    Muốn đổi tần suất (VD mỗi 30 phút / mỗi 6 tiếng) thì sửa trong hàm setupHourlyTrigger()
+ *    bên dưới (đổi .everyHours(1) thành .everyMinutes(30) hoặc .everyHours(6) ...).
+ *
+ * LƯU Ý: Khi thêm nguồn mới trên web ORDER NEXUS, nhớ thêm luôn 1 dòng tương ứng vào
+ * tab Config của sheet này (2 nơi cấu hình độc lập, không tự đồng bộ với nhau).
+ */
+
+var CONFIG_SHEET_NAME = 'Config';
+var OUTPUT_SHEET_NAME = 'Tổng hợp';
+var LOG_SHEET_NAME = 'Log lỗi';
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('🔄 Auto Sync')
+    .addItem('Tạo tab Config mẫu', 'createConfigTemplate')
+    .addItem('Chạy đồng bộ ngay', 'syncNow')
+    .addSeparator()
+    .addItem('Bật tự động mỗi giờ', 'setupHourlyTrigger')
+    .addItem('Tắt tự động', 'removeTriggers')
+    .addToUi();
+}
+
+function createConfigTemplate() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(CONFIG_SHEET_NAME) || ss.insertSheet(CONFIG_SHEET_NAME, 0);
+  if (sheet.getRange('A1').getValue() === 'Tên nguồn') {
+    SpreadsheetApp.getUi().alert('Tab Config đã có sẵn rồi.');
+    return;
+  }
+  var headers = ['Tên nguồn', 'Link Sheet', 'Tab (để trống = tất cả tab, cách nhau dấu phẩy nếu nhiều)', 'Cột Order ID', 'Cột Cost'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold').setBackground('#d9ead3');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidths(1, 5, 220);
+  SpreadsheetApp.getUi().alert('Đã tạo tab Config. Điền thông tin từng nguồn vào (copy y nguyên từ tab "Sheet nguồn" trên web ORDER NEXUS), rồi bấm "Chạy đồng bộ ngay".');
+}
+
+function syncNow() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var configSheet = ss.getSheetByName(CONFIG_SHEET_NAME);
+  if (!configSheet) {
+    SpreadsheetApp.getUi().alert('Chưa có tab Config. Bấm "🔄 Auto Sync" > "Tạo tab Config mẫu" trước.');
+    return;
+  }
+  var configData = configSheet.getDataRange().getValues();
+  var sources = [];
+  for (var i = 1; i < configData.length; i++) {
+    var row = configData[i];
+    if (!row[1]) continue; // không có link -> bỏ qua dòng này
+    sources.push({
+      name: String(row[0] || ('Nguồn ' + i)).trim(),
+      url: String(row[1]).trim(),
+      tab: row[2] ? String(row[2]).trim() : '',
+      orderCol: String(row[3] || '').trim(),
+      costCol: String(row[4] || '').trim()
+    });
+  }
+
+  var allOrders = []; // { orderId, source, tab, cost }
+  var errors = [];
+
+  sources.forEach(function (src) {
+    try {
+      var srcSS = SpreadsheetApp.openByUrl(src.url);
+      var tabNames = resolveTabNames(src, srcSS);
+      if (!tabNames.length) {
+        errors.push(src.name + ': không xác định được tab nào để quét');
+        return;
+      }
+      tabNames.forEach(function (tabName) {
+        var sh = srcSS.getSheetByName(tabName);
+        if (!sh) {
+          errors.push(src.name + ': không tìm thấy tab "' + tabName + '" (kiểm tra chính tả/khoảng trắng)');
+          return;
+        }
+        var values = sh.getDataRange().getValues();
+        if (!values.length) {
+          errors.push(src.name + ': tab "' + tabName + '" đang trống');
+          return;
+        }
+        var headerRowIdx = locateHeaderRow(values, src.orderCol, src.costCol);
+        var orderColIdx = resolveColIndex(values, headerRowIdx, src.orderCol);
+        if (orderColIdx === -1) {
+          errors.push(src.name + ': tab "' + tabName + '" không xác định được cột Order ID ("' + src.orderCol + '")');
+          return;
+        }
+        var costColIdx = resolveColIndex(values, headerRowIdx, src.costCol);
+
+        var added = 0;
+        for (var r = headerRowIdx + 1; r < values.length; r++) {
+          var oid = String(values[r][orderColIdx] || '').trim();
+          if (!oid || !isPlausibleOrderId(oid)) continue;
+          var cost = costColIdx >= 0 ? values[r][costColIdx] : '';
+          allOrders.push({ orderId: oid, source: src.name, tab: tabName, cost: cost });
+          added++;
+        }
+        if (!added) errors.push(src.name + ': tab "' + tabName + '" có dữ liệu nhưng 0 dòng Order ID hợp lệ');
+      });
+    } catch (e) {
+      errors.push(src.name + ': lỗi mở sheet (' + e.message + '). Kiểm tra lại link/quyền chia sẻ.');
+    }
+  });
+
+  // Ghi tab Tổng hợp
+  var outSheet = ss.getSheetByName(OUTPUT_SHEET_NAME) || ss.insertSheet(OUTPUT_SHEET_NAME);
+  outSheet.clear();
+  var outHeader = ['Order ID', 'Nguồn', 'Tab', 'Cost'];
+  var outRows = [outHeader];
+  allOrders.forEach(function (o) {
+    outRows.push([o.orderId, o.source, o.tab, o.cost]);
+  });
+  if (outRows.length > 0) {
+    outSheet.getRange(1, 1, outRows.length, outHeader.length).setValues(outRows);
+  }
+  outSheet.getRange(1, 1, 1, outHeader.length).setFontWeight('bold').setBackground('#d9ead3');
+  outSheet.setFrozenRows(1);
+  outSheet.autoResizeColumns(1, outHeader.length);
+
+  // Ghi thời gian chạy + log lỗi
+  var logSheet = ss.getSheetByName(LOG_SHEET_NAME) || ss.insertSheet(LOG_SHEET_NAME);
+  logSheet.clear();
+  logSheet.getRange(1, 1).setValue('Lần chạy gần nhất: ' + new Date());
+  logSheet.getRange(2, 1).setValue('Tổng số đơn: ' + allOrders.length + ' | Số nguồn: ' + sources.length);
+  if (errors.length) {
+    logSheet.getRange(4, 1).setValue('Lỗi/cảnh báo:');
+    logSheet.getRange(5, 1, errors.length, 1).setValues(errors.map(function (e) { return [e]; }));
+  } else {
+    logSheet.getRange(4, 1).setValue('Không có lỗi.');
+  }
+}
+
+function resolveTabNames(src, srcSS) {
+  if (!src.tab) return srcSS.getSheets().map(function (s) { return s.getName(); });
+  return src.tab.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s; });
+}
+
+function isColLetterSpec(spec) {
+  return !!spec && /^[A-Za-z]{1,3}$/.test(spec.trim());
+}
+function colLetterToIndex(letters) {
+  var n = 0;
+  letters = letters.toUpperCase();
+  for (var i = 0; i < letters.length; i++) n = n * 26 + (letters.charCodeAt(i) - 64);
+  return n - 1;
+}
+function findHeaderAndCol(values, headerText) {
+  var target = headerText.trim().toLowerCase();
+  for (var r = 0; r < Math.min(5, values.length); r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      if (String(values[r][c] || '').trim().toLowerCase() === target) return { rowIdx: r, colIdx: c };
+    }
+  }
+  return null;
+}
+function locateHeaderRow(values, orderColSpec, costColSpec) {
+  if (orderColSpec && !isColLetterSpec(orderColSpec)) {
+    var hit = findHeaderAndCol(values, orderColSpec);
+    if (hit) return hit.rowIdx;
+  }
+  if (costColSpec && !isColLetterSpec(costColSpec)) {
+    var hit2 = findHeaderAndCol(values, costColSpec);
+    if (hit2) return hit2.rowIdx;
+  }
+  return 0;
+}
+function resolveColIndex(values, headerRowIdx, colSpec) {
+  if (!colSpec) return -1;
+  var spec = colSpec.trim();
+  if (isColLetterSpec(spec)) return colLetterToIndex(spec);
+  var header = values[headerRowIdx] || [];
+  for (var c = 0; c < header.length; c++) {
+    if (String(header[c] || '').trim().toLowerCase() === spec.toLowerCase()) return c;
+  }
+  return -1;
+}
+function isPlausibleOrderId(s) {
+  // Loại bỏ dòng rác kiểu ghi chú/thông báo dài (thường dính chung cột do merge cell) —
+  // Order ID thật thường ngắn, không có nhiều khoảng trắng liên tiếp như câu văn.
+  if (!s) return false;
+  if (s.length > 40) return false;
+  if (s.indexOf('\n') !== -1) return false;
+  var spaces = (s.match(/\s/g) || []).length;
+  if (spaces >= 3) return false;
+  return true;
+}
+
+function setupHourlyTrigger() {
+  removeTriggers();
+  ScriptApp.newTrigger('syncNow').timeBased().everyHours(1).create();
+  SpreadsheetApp.getUi().alert('Đã bật tự động đồng bộ mỗi giờ. Sheet sẽ tự cập nhật kể cả khi anh không mở web/sheet.');
+}
+function removeTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncNow') ScriptApp.deleteTrigger(t);
+  });
+}

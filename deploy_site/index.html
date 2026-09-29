@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tra cứu Cost Đơn Hàng</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --green:#2e7d32; --green-bg:#e8f5e9; --orange:#e65100; --orange-bg:#fff3e0;
+    --red:#c62828; --red-bg:#ffebee; --border:#e0e0e0; --text:#212121; --muted:#757575;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:#fafafa;color:var(--text);margin:0;padding:24px;}
+  .container{max-width:960px;margin:0 auto;}
+  h1{font-size:22px;margin-bottom:4px;}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:20px;}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:18px;}
+  button{cursor:pointer;border:none;border-radius:6px;padding:9px 16px;font-size:14px;font-weight:600;}
+  .btn-primary{background:#1a73e8;color:#fff;}
+  .btn-primary:hover{background:#1558b0;}
+  .btn-secondary{background:#f1f3f4;color:#333;}
+  .btn-danger{background:#fff;color:var(--red);border:1px solid var(--red);padding:4px 10px;font-size:12px;}
+  input,select{padding:9px;border:1px solid var(--border);border-radius:6px;font-size:14px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;}
+  .row-flex{display:flex;gap:8px;flex-wrap:wrap;align-items:end;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:12px;color:var(--muted);}
+  #searchRow{display:flex;gap:8px;}
+  #searchRow input{flex:1;font-size:16px;padding:12px;}
+  .result{border:1px solid var(--border);border-radius:8px;margin-bottom:12px;overflow:hidden;}
+  .result-header{padding:10px 14px;font-weight:600;font-size:14px;}
+  .hit .result-header{background:var(--green-bg);color:var(--green);}
+  .miss .result-header{background:#f5f5f5;color:var(--muted);font-weight:400;}
+  .error .result-header{background:var(--red-bg);color:var(--red);}
+  .rowTable{padding:8px 14px;}
+  .rowTable td:first-child{color:var(--muted);width:35%;}
+  .costRow td{background:var(--orange-bg);font-weight:700;color:var(--orange);}
+  #authBar{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+  .hidden{display:none !important;}
+  #status{font-size:13px;color:var(--muted);margin-top:8px;}
+  .badge{display:inline-block;background:#e3f2fd;color:#1565c0;border-radius:10px;padding:2px 8px;font-size:11px;margin-left:6px;}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div id="authBar">
+    <div>
+      <h1>Tra cứu Cost Đơn Hàng</h1>
+      <div class="sub">Nhập Order ID → tự tìm khắp các sheet nguồn, hiện đơn nằm ở đâu và cost bao nhiêu.</div>
+    </div>
+    <div>
+      <button id="signinBtn" class="btn-primary">Đăng nhập Google</button>
+      <span id="userInfo" class="sub hidden"></span>
+    </div>
+  </div>
+
+  <div id="mainSection" class="hidden">
+
+    <div class="card">
+      <div class="row-flex" style="justify-content:space-between;margin-bottom:10px;">
+        <strong>Sheet nguồn</strong>
+        <button id="toggleAddForm" class="btn-secondary">+ Thêm sheet</button>
+      </div>
+
+      <table id="sourceTable">
+        <thead>
+          <tr><th>Tên</th><th>Sheet</th><th>Tab</th><th>Cột Order ID</th><th>Cột Cost</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <form id="addSourceForm" class="hidden" style="margin-top:14px;">
+        <div class="row-flex">
+          <div class="field"><label>Tên hiển thị</label><input name="name" required placeholder="VD: Bên 6"></div>
+          <div class="field" style="flex:1;min-width:220px;"><label>Link Google Sheet</label><input name="url" required placeholder="https://docs.google.com/spreadsheets/d/..."></div>
+          <div class="field"><label>Tab (để trống = tất cả tab)</label><input name="tab" placeholder="VD: T8"></div>
+          <div class="field"><label>Cột Order ID</label><input name="orderCol" required placeholder="Tên header, VD: Order ID"></div>
+          <div class="field"><label>Cột Cost</label><input name="costCol" placeholder="Tên header hoặc chữ cột, VD: L"></div>
+          <button type="submit" class="btn-primary">Lưu</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div id="searchRow">
+        <input id="orderIdInput" placeholder="Nhập Order ID cần tra cứu..." autocomplete="off">
+        <button id="searchBtn" class="btn-primary">Tìm</button>
+      </div>
+      <div id="status"></div>
+    </div>
+
+    <div id="resultsArea"></div>
+
+  </div>
+</div>
+
+<script>
+/* ============ CẤU HÌNH - ĐIỀN CLIENT ID SAU KHI TẠO Ở GOOGLE CLOUD CONSOLE ============ */
+const CLIENT_ID = '67677785348-42tu6un158a5srq2hh0411909sbfmcv6.apps.googleusercontent.com';
+/* ====================================================================================== */
+
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+let accessToken = null;
+let tokenClient = null;
+
+const DEFAULT_SOURCES = [
+  {name:'Fullfill Check (theo dõi đơn)', url:'https://docs.google.com/spreadsheets/d/14hKaFkPqbWvtivI8SLLERk_YwpnIsFs5xN57IYq8FAc/edit', tab:'', orderCol:'ODER', costCol:''},
+  {name:'Bên 1', url:'https://docs.google.com/spreadsheets/d/1F6QhTwsIPEZGyWI5ZJ5M_v2r9yVJ6x3kkaB0pEXat8k/edit', tab:'', orderCol:'Order ID', costCol:'L'},
+  {name:'Bên 2', url:'https://docs.google.com/spreadsheets/d/1_Iyxd2mr9sHRdvft2vlgBBACzooU1V4akVqsGdRaCMY/edit', tab:'', orderCol:'Order ID', costCol:'$'},
+  {name:'Bên 3', url:'https://docs.google.com/spreadsheets/d/1bCKMywXf2vXbMQrAnOWOJYNXrXV3Ai7xfpsM5fNeV7c/edit', tab:'', orderCol:'Mã đơn', costCol:'Tổng tiền'},
+  {name:'Bên 5', url:'https://docs.google.com/spreadsheets/d/1HtjHS6teg90lrRNjrcWlsCNItOOeyArJX03Cfo9ABoo/edit', tab:'', orderCol:'Order ID', costCol:'L'}
+];
+
+function initGis(){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: (resp) => {
+      if (resp.error) { alert('Đăng nhập lỗi: ' + resp.error); return; }
+      accessToken = resp.access_token;
+      document.getElementById('mainSection').classList.remove('hidden');
+      document.getElementById('signinBtn').classList.add('hidden');
+      const info = document.getElementById('userInfo');
+      info.textContent = '✅ Đã đăng nhập';
+      info.classList.remove('hidden');
+      loadSources();
+    }
+  });
+}
+window.addEventListener('load', () => {
+  if (CLIENT_ID.indexOf('DÁN_CLIENT_ID') === 0) {
+    document.getElementById('signinBtn').textContent = 'Chưa cấu hình Client ID (xem HUONG_DAN.md)';
+    document.getElementById('signinBtn').disabled = true;
+    return;
+  }
+  initGis();
+});
+document.getElementById('signinBtn').addEventListener('click', () => tokenClient.requestAccessToken());
+
+/* ---------- Quản lý sheet nguồn (lưu trong trình duyệt) ---------- */
+function getSources(){
+  const raw = localStorage.getItem('costSources');
+  if (!raw) { localStorage.setItem('costSources', JSON.stringify(DEFAULT_SOURCES)); return DEFAULT_SOURCES.slice(); }
+  return JSON.parse(raw);
+}
+function saveSources(list){ localStorage.setItem('costSources', JSON.stringify(list)); }
+function loadSources(){ renderSourceTable(); }
+function renderSourceTable(){
+  const list = getSources();
+  const tbody = document.querySelector('#sourceTable tbody');
+  tbody.innerHTML = '';
+  list.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(s.name)}</td>
+      <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">mở sheet ↗</a></td>
+      <td>${s.tab ? escapeHtml(s.tab) : '<span style="color:#999">tất cả tab</span>'}</td>
+      <td>${escapeHtml(s.orderCol)}</td>
+      <td>${s.costCol ? escapeHtml(s.costCol) : '<span style="color:#999">tự nhận diện</span>'}</td>
+      <td><button class="btn-danger" data-i="${i}">Xoá</button></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('button.btn-danger').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const list = getSources();
+      list.splice(parseInt(btn.dataset.i, 10), 1);
+      saveSources(list);
+      renderSourceTable();
+    });
+  });
+}
+document.getElementById('toggleAddForm').addEventListener('click', () => {
+  document.getElementById('addSourceForm').classList.toggle('hidden');
+});
+document.getElementById('addSourceForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const list = getSources();
+  list.push({
+    name: f.name.value.trim(),
+    url: f.url.value.trim(),
+    tab: f.tab.value.trim(),
+    orderCol: f.orderCol.value.trim(),
+    costCol: f.costCol.value.trim()
+  });
+  saveSources(list);
+  f.reset();
+  document.getElementById('addSourceForm').classList.add('hidden');
+  renderSourceTable();
+});
+
+/* ---------- Gọi Google Sheets API ---------- */
+function extractSheetId(url){
+  const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return m ? m[1] : url.trim();
+}
+async function fetchAllTabNames(sheetId){
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`,
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!res.ok) throw new Error('Không mở được sheet (HTTP ' + res.status + ')');
+  const data = await res.json();
+  return (data.sheets || []).map(s => s.properties.title);
+}
+async function fetchTabValues(sheetId, tabName){
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(tabName)}?majorDimension=ROWS`,
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  return data.values || [];
+}
+function colLetterToIndex(letters){
+  let n = 0;
+  for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+function findHeaderAndCol(values, headerText){
+  // Tìm dòng tiêu đề chứa đúng headerText trong 5 dòng đầu (không phân biệt hoa thường/khoảng trắng)
+  const target = headerText.trim().toLowerCase();
+  for (let r = 0; r < Math.min(5, values.length); r++) {
+    for (let c = 0; c < values[r].length; c++) {
+      if (String(values[r][c] || '').trim().toLowerCase() === target) {
+        return { rowIdx: r, colIdx: c };
+      }
+    }
+  }
+  return null;
+}
+function resolveCostColIndex(values, headerRowIdx, costColSpec){
+  if (!costColSpec) return -1;
+  const spec = costColSpec.trim();
+  if (/^[A-Za-z]{1,3}$/.test(spec)) {
+    // spec toàn chữ cái ngắn (VD "L") -> hiểu là chữ cột
+    return colLetterToIndex(spec);
+  }
+  const header = values[headerRowIdx] || [];
+  for (let c = 0; c < header.length; c++) {
+    if (String(header[c] || '').trim().toLowerCase() === spec.toLowerCase()) return c;
+  }
+  return -1;
+}
+function escapeHtml(str){
+  return String(str == null ? '' : str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+/* ---------- Tìm kiếm ---------- */
+async function searchOrderId(){
+  const orderId = document.getElementById('orderIdInput').value.trim();
+  const resultsArea = document.getElementById('resultsArea');
+  const status = document.getElementById('status');
+  if (!orderId) return;
+  resultsArea.innerHTML = '';
+  status.textContent = 'Đang tìm...';
+
+  const sources = getSources();
+  const blocks = await Promise.all(sources.map(src => searchInSource(src, orderId)));
+  status.textContent = 'Xong lúc ' + new Date().toLocaleTimeString('vi-VN');
+  resultsArea.innerHTML = blocks.join('');
+}
+
+async function searchInSource(src, orderId){
+  try {
+    const sheetId = extractSheetId(src.url);
+    const tabNames = src.tab ? [src.tab] : await fetchAllTabNames(sheetId);
+    let hits = [];
+
+    for (const tabName of tabNames) {
+      let values;
+      try { values = await fetchTabValues(sheetId, tabName); }
+      catch (e) { continue; }
+      if (!values.length) continue;
+
+      const hdr = findHeaderAndCol(values, src.orderCol);
+      if (!hdr) continue;
+      const costColIdx = resolveCostColIndex(values, hdr.rowIdx, src.costCol);
+
+      for (let r = hdr.rowIdx + 1; r < values.length; r++) {
+        const cell = String(values[r][hdr.colIdx] || '').trim();
+        if (cell === orderId) {
+          hits.push({ tabName, rowNum: r + 1, header: values[hdr.rowIdx], row: values[r], costColIdx });
+        }
+      }
+    }
+
+    if (!hits.length) {
+      return `<div class="result miss"><div class="result-header">${escapeHtml(src.name)} — không có đơn này</div></div>`;
+    }
+
+    let html = '';
+    hits.forEach(hit => {
+      let rows = '';
+      for (let c = 0; c < hit.row.length; c++) {
+        const h = hit.header[c] || ('Cột ' + (c + 1));
+        if (!h) continue;
+        const isCost = c === hit.costColIdx || (!src.costCol && /giá|cost|tiền|price/i.test(h));
+        rows += `<tr class="${isCost ? 'costRow' : ''}"><td>${escapeHtml(h)}</td><td>${escapeHtml(hit.row[c])}</td></tr>`;
+      }
+      html += `<div class="result hit">
+        <div class="result-header">✅ ${escapeHtml(src.name)} <span class="badge">tab: ${escapeHtml(hit.tabName)}</span></div>
+        <table class="rowTable">${rows}</table>
+      </div>`;
+    });
+    return html;
+  } catch (err) {
+    return `<div class="result error"><div class="result-header">${escapeHtml(src.name)} — lỗi: ${escapeHtml(err.message)}</div></div>`;
+  }
+}
+
+document.getElementById('searchBtn').addEventListener('click', searchOrderId);
+document.getElementById('orderIdInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchOrderId(); });
+</script>
+</body>
+</html>

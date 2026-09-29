@@ -1,0 +1,170 @@
+/**
+ * TỔNG HỢP COST ĐI ĐƠN THEO ORDER ID
+ * -----------------------------------
+ * Cách cài đặt:
+ * 1. Mở Google Sheet "Tổng hợp Cost Đi Đơn" (tab đầu tiên là Config).
+ * 2. Vào menu Extensions (Tiện ích mở rộng) > Apps Script.
+ * 3. Xoá hết code mẫu trong file Code.gs, dán toàn bộ nội dung file này vào.
+ * 4. Bấm Save (biểu tượng đĩa mềm).
+ * 5. Quay lại Google Sheet, tải lại trang (F5). Sẽ xuất hiện menu "🔄 Cost Tool" trên thanh menu.
+ * 6. Bấm "🔄 Cost Tool" > "Tổng hợp Cost theo Order ID".
+ *    - Lần đầu chạy Google sẽ hỏi cấp quyền (Authorize) -> chọn tài khoản
+ *      ducduynd098@gmail.com -> Advanced -> Go to ... (unsafe) -> Allow.
+ *      (An toàn vì đây là script do chính bạn cài trên Sheet của mình.)
+ * 7. Kết quả sẽ nằm ở tab "Tổng hợp". Nếu có lỗi đọc sheet nguồn nào,
+ *    xem chi tiết ở tab "Log lỗi".
+ *
+ * Khi có thêm bên đi đơn mới: qua tab Config, copy 1 dòng có sẵn,
+ * sửa lại Tên bên / Sheet URL / tên 2 cột Order ID & Cost, rồi chạy lại.
+ */
+
+function tongHopCost() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var configSheet = ss.getSheets()[0]; // luôn dùng tab đầu tiên làm Config
+  var configData = configSheet.getDataRange().getValues();
+  var headers = configData[0];
+
+  var idxName = headers.indexOf('Tên bên đi đơn (đổi lại cho dễ nhớ)');
+  var idxUrl = headers.indexOf('Sheet URL');
+  var idxTab = headers.indexOf('Tên tab (để trống = tab đầu tiên)');
+  var idxOrderCol = headers.indexOf('Cột Order ID (đúng tên ở dòng 1 sheet gốc)');
+  var idxCostCol = headers.indexOf('Cột Cost (đúng tên ở dòng 1 sheet gốc)');
+
+  if (idxUrl === -1 || idxOrderCol === -1 || idxCostCol === -1) {
+    SpreadsheetApp.getUi().alert('Không tìm thấy đủ cột cấu hình ở tab Config. Kiểm tra lại tiêu đề dòng 1.');
+    return;
+  }
+
+  var sources = [];
+  for (var i = 1; i < configData.length; i++) {
+    var row = configData[i];
+    if (!row[idxUrl]) continue;
+    sources.push({
+      name: row[idxName] || ('Nguồn ' + i),
+      url: String(row[idxUrl]).trim(),
+      tab: row[idxTab] ? String(row[idxTab]).trim() : '',
+      orderCol: String(row[idxOrderCol]).trim(),
+      costCol: String(row[idxCostCol]).trim()
+    });
+  }
+
+  var orderMap = {};   // { orderId: { sourceName: cost } }
+  var sourceNames = [];
+  var errors = [];
+
+  sources.forEach(function (src) {
+    sourceNames.push(src.name);
+    try {
+      var srcSS = SpreadsheetApp.openByUrl(src.url);
+      var srcSheet = src.tab ? srcSS.getSheetByName(src.tab) : srcSS.getSheets()[0];
+      if (!srcSheet) {
+        errors.push(src.name + ': không tìm thấy tab "' + src.tab + '"');
+        return;
+      }
+      var data = srcSheet.getDataRange().getValues();
+      if (data.length < 2) {
+        errors.push(src.name + ': sheet không có dữ liệu');
+        return;
+      }
+      var hdr = data[0];
+      var orderIdx = findColIndex(hdr, src.orderCol);
+      var costIdx = findColIndex(hdr, src.costCol);
+
+      if (orderIdx === -1 || costIdx === -1) {
+        errors.push(
+          src.name + ': không tìm thấy cột "' +
+          (orderIdx === -1 ? src.orderCol : src.costCol) +
+          '". Các cột có trong sheet: ' + hdr.filter(String).join(' | ')
+        );
+        return;
+      }
+
+      for (var r = 1; r < data.length; r++) {
+        var orderIdRaw = data[r][orderIdx];
+        if (!orderIdRaw && orderIdRaw !== 0) continue;
+        var orderId = String(orderIdRaw).trim();
+        if (!orderId) continue;
+
+        var costRaw = data[r][costIdx];
+        var cost = (typeof costRaw === 'number')
+          ? costRaw
+          : parseFloat(String(costRaw).replace(/[^0-9.-]/g, ''));
+
+        if (!orderMap[orderId]) orderMap[orderId] = {};
+        orderMap[orderId][src.name] = isNaN(cost) ? costRaw : cost;
+      }
+    } catch (e) {
+      errors.push(src.name + ': lỗi khi mở sheet (' + e.message + '). Kiểm tra lại link / quyền chia sẻ.');
+    }
+  });
+
+  // Ghi tab Tổng hợp
+  var outSheet = ss.getSheetByName('Tổng hợp') || ss.insertSheet('Tổng hợp');
+  outSheet.clear();
+  var outHeader = ['Order ID'].concat(sourceNames).concat(['Tổng Cost', 'Số bên ghi nhận']);
+  var outRows = [outHeader];
+
+  Object.keys(orderMap).sort().forEach(function (orderId) {
+    var row = [orderId];
+    var total = 0;
+    var count = 0;
+    sourceNames.forEach(function (name) {
+      var val = orderMap[orderId][name];
+      if (val !== undefined && val !== '') {
+        row.push(val);
+        if (typeof val === 'number') { total += val; count++; }
+      } else {
+        row.push('');
+      }
+    });
+    row.push(total);
+    row.push(count);
+    outRows.push(row);
+  });
+
+  if (outRows.length > 1) {
+    outSheet.getRange(1, 1, outRows.length, outHeader.length).setValues(outRows);
+  }
+  outSheet.getRange(1, 1, 1, outHeader.length).setFontWeight('bold').setBackground('#d9ead3');
+  outSheet.setFrozenRows(1);
+  outSheet.autoResizeColumns(1, outHeader.length);
+
+  // Tô đỏ dòng chỉ có 1 bên ghi nhận / dòng nghi trùng (nhiều hơn số bên hợp lệ đồng thời) để dễ soi
+  var countColIdx = outHeader.length; // 1-based, cột cuối
+  for (var rr = 2; rr <= outRows.length; rr++) {
+    var cnt = outRows[rr - 1][countColIdx - 1];
+    if (cnt === 0) {
+      outSheet.getRange(rr, 1, 1, outHeader.length).setBackground('#fce5cd'); // cam nhạt: không bên nào có cost hợp lệ
+    }
+  }
+
+  // Ghi tab Log lỗi
+  var logSheet = ss.getSheetByName('Log lỗi') || ss.insertSheet('Log lỗi');
+  logSheet.clear();
+  logSheet.getRange(1, 1).setValue('Thời gian chạy: ' + new Date());
+  if (errors.length) {
+    logSheet.getRange(2, 1, errors.length, 1).setValues(errors.map(function (e) { return [e]; }));
+  } else {
+    logSheet.getRange(2, 1).setValue('Không có lỗi.');
+  }
+
+  var msg = 'Đã tổng hợp ' + Object.keys(orderMap).length + ' Order ID từ ' + sourceNames.length + ' bên.';
+  if (errors.length) msg += '\n\nCó ' + errors.length + ' lỗi, xem chi tiết ở tab "Log lỗi".';
+  SpreadsheetApp.getUi().alert(msg);
+}
+
+function findColIndex(headerRow, target) {
+  if (!target) return -1;
+  var t = String(target).trim().toLowerCase();
+  for (var i = 0; i < headerRow.length; i++) {
+    if (String(headerRow[i]).trim().toLowerCase() === t) return i;
+  }
+  return -1;
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('🔄 Cost Tool')
+    .addItem('Tổng hợp Cost theo Order ID', 'tongHopCost')
+    .addToUi();
+}

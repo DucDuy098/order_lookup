@@ -1,0 +1,203 @@
+/**
+ * ĐỒNG BỘ LỊCH SỬ DÒNG TIỀN PINGPONG RA GOOGLE SHEET (TỰ ĐỘNG, CHẠY NỀN)
+ * -----------------------------------------------------------------------
+ * Bản v2: dùng hàm ký RSA có sẵn của Apps Script (Utilities.computeRsaSha256Signature),
+ * KHÔNG cần dán thư viện jsrsasign nữa — chỉ cần 1 file duy nhất này.
+ *
+ * CÀI ĐẶT (làm 1 lần):
+ * 1. Extensions (Tiện ích mở rộng) > Apps Script.
+ * 2. Xoá code mẫu trong "Mã.gs" (Code.gs) → dán TOÀN BỘ nội dung file này vào → Save.
+ * 3. Vào ⚙️ Project Settings → Script Properties → Add script property, thêm:
+ *      - PP_APP_ID       = 805661865908887
+ *      - PP_APP_SECRET   = <xem .env.local>
+ *      - PP_PRIVATE_KEY  = dán TOÀN BỘ nội dung file pingpong_private_key.pem
+ *        (cả dòng -----BEGIN PRIVATE KEY----- và -----END PRIVATE KEY-----)
+ * 4. Quay lại "Mã.gs", ở dropdown cạnh nút "Chạy" chọn hàm "syncCashFlow" → bấm Chạy để test.
+ *    - Lần đầu Google sẽ hỏi cấp quyền (Authorize) → chọn tài khoản → Advanced → Go to ... (unsafe) → Allow.
+ *    - Kết quả nằm ở tab "PingPong Cash Flow". Nếu lỗi, xem tab "PingPong Log".
+ * 5. Quay lại Google Sheet (F5) → dùng menu "💰 PingPong Sync" trên sheet → bấm "Bật tự động mỗi giờ".
+ */
+
+var API_BASE = 'http://144.202.119.139:8081/pingpong-proxy'; // Gọi qua VPS proxy (IP tĩnh đã whitelist trên PingPong) thay vì gọi thẳng gateway.pingpongx.com
+var OUTPUT_SHEET = 'PingPong Cash Flow';
+var LOG_SHEET = 'PingPong Log';
+var DEFAULT_START_TIME = '2023-01-01T00:00:00Z';
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu('💰 PingPong Sync')
+    .addItem('Đồng bộ ngay', 'syncCashFlow')
+    .addSeparator()
+    .addItem('Bật tự động mỗi giờ', 'setupHourlyTrigger')
+    .addItem('Tắt tự động', 'removeTriggers')
+    .addToUi();
+}
+
+/* ---------- Xác thực & ký request ---------- */
+
+function getAccessToken_() {
+  var props = PropertiesService.getScriptProperties();
+  var cached = props.getProperty('PP_ACCESS_TOKEN');
+  var expiresAt = Number(props.getProperty('PP_TOKEN_EXPIRES_AT') || 0);
+  if (cached && Date.now() < expiresAt) return cached;
+
+  var appId = props.getProperty('PP_APP_ID');
+  var appSecret = props.getProperty('PP_APP_SECRET');
+  if (!appId || !appSecret) {
+    throw new Error('Chưa cấu hình PP_APP_ID / PP_APP_SECRET trong Script Properties (Project Settings).');
+  }
+
+  var url = API_BASE + '/v2/token/get?app_id=' + encodeURIComponent(appId) + '&app_secret=' + encodeURIComponent(appSecret);
+  var res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  if (code < 200 || code >= 300) throw new Error('Lấy access_token thất bại (HTTP ' + code + '): ' + text);
+
+  var raw = JSON.parse(text);
+  var data = (raw && raw.data) || raw; // PingPong bọc dữ liệu thật trong field "data"
+  if (!data.access_token) throw new Error('Không có access_token trong phản hồi: ' + text);
+
+  props.setProperty('PP_ACCESS_TOKEN', data.access_token);
+  props.setProperty('PP_TOKEN_EXPIRES_AT', String(Date.now() + (Number(data.expires_in || 7200) - 120) * 1000));
+  return data.access_token;
+}
+
+function signBody_(bodyStr) {
+  var props = PropertiesService.getScriptProperties();
+  var rawKey = props.getProperty('PP_PRIVATE_KEY');
+  if (!rawKey) throw new Error('Chưa cấu hình PP_PRIVATE_KEY trong Script Properties.');
+  // Ô nhập Script Properties là input 1 dòng nên xuống dòng bị mất khi lưu key —
+  // phải tự dựng lại đúng định dạng PEM (base64 xuống dòng mỗi 64 ký tự) trước khi ký.
+  var body = rawKey.replace(/-----BEGIN PRIVATE KEY-----/g, '').replace(/-----END PRIVATE KEY-----/g, '').replace(/\s+/g, '');
+  var lines = [];
+  for (var i = 0; i < body.length; i += 64) lines.push(body.substring(i, i + 64));
+  var privateKeyPem = '-----BEGIN PRIVATE KEY-----\n' + lines.join('\n') + '\n-----END PRIVATE KEY-----\n';
+  var sigBytes = Utilities.computeRsaSha256Signature(bodyStr, privateKeyPem);
+  return Utilities.base64Encode(sigBytes);
+}
+
+function callReportingApi_(path, bodyObj) {
+  var token = getAccessToken_();
+  var bodyStr = JSON.stringify(bodyObj);
+  var signature = signBody_(bodyStr);
+
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      'Authorization': token,
+      'sign': signature,
+      'sign-version': 'v1'
+    },
+    payload: bodyStr,
+    muteHttpExceptions: true
+  };
+
+  var res = UrlFetchApp.fetch(API_BASE + path, options);
+  var code = res.getResponseCode();
+  var text = res.getContentText();
+  if (code < 200 || code >= 300) throw new Error('API ' + path + ' lỗi (HTTP ' + code + '): ' + text);
+  var raw = JSON.parse(text);
+  return (raw && raw.data) || raw;
+}
+
+/* ---------- Lấy dữ liệu ---------- */
+
+function fetchAllTransactions_(startTime, endTime) {
+  var all = [];
+  var pageNo = 1;
+  var pageSize = 200;
+  while (true) {
+    var body = { page_no: pageNo, page_size: pageSize, start_time: startTime, end_time: endTime };
+    var resp = callReportingApi_('/api/reporting/v3/transaction-history', body);
+    var items = resp.item_list || [];
+    all = all.concat(items);
+    var totalNum = resp.total_num || 0;
+    if (items.length === 0 || all.length >= totalNum) break;
+    pageNo++;
+    Utilities.sleep(250);
+  }
+  return all;
+}
+
+/* ---------- Đồng bộ chính ---------- */
+
+function syncCashFlow() {
+  var props = PropertiesService.getScriptProperties();
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(OUTPUT_SHEET) || ss.insertSheet(OUTPUT_SHEET);
+  var logSheet = ss.getSheetByName(LOG_SHEET) || ss.insertSheet(LOG_SHEET);
+
+  var headers = ['Order ID', 'Loại', 'Trạng thái', 'Đối tác', 'TK đối tác', 'Ngân hàng đối tác',
+    'Tiền vào', 'Tiền tệ vào', 'Tiền ra', 'Tiền tệ ra', 'Phí', 'Tiền tệ phí', 'Tỷ giá',
+    'Ghi chú / Reference', 'Order ID gốc', 'Thời gian tạo', 'Thời gian hoàn tất'];
+
+  var isFirstRun = sheet.getLastRow() === 0;
+  if (isFirstRun) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold').setBackground('#d9ead3');
+    sheet.setFrozenRows(1);
+  }
+
+  var lastSync = props.getProperty('PP_LAST_SYNC_TIME');
+  var startTime = lastSync || DEFAULT_START_TIME;
+  var now = new Date();
+  var endTime = Utilities.formatDate(now, 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+
+  var items;
+  try {
+    items = fetchAllTransactions_(startTime, endTime);
+  } catch (e) {
+    logSheet.clear();
+    logSheet.getRange(1, 1).setValue('Lỗi lúc ' + new Date() + ': ' + e.message);
+    throw e;
+  }
+
+  var addedCount = 0;
+  if (items.length) {
+    var existingIds = {};
+    if (!isFirstRun && sheet.getLastRow() > 1) {
+      var idCol = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+      idCol.forEach(function (r) { if (r[0]) existingIds[r[0]] = true; });
+    }
+    var rows = [];
+    items.forEach(function (it) {
+      if (existingIds[it.order_id]) return;
+      rows.push([
+        it.order_id || '', it.order_type || '', it.status || '',
+        it.counterparty_name || '', it.counterparty_account || '', it.counterparty_bank || '',
+        it.balance_credit_amount || '', it.balance_credit_currency || '',
+        it.balance_debit_amount || '', it.balance_debit_currency || '',
+        it.transaction_fee_charge_amount || '', it.transaction_fee_charge_currency || '',
+        it.fx_rate || '', it.reference || '', it.original_order_id || '',
+        it.created_at || '', it.completed_at || ''
+      ]);
+    });
+    if (rows.length) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
+      addedCount = rows.length;
+    }
+  }
+
+  var checkpoint = new Date(now.getTime() - 5 * 60 * 1000);
+  props.setProperty('PP_LAST_SYNC_TIME', Utilities.formatDate(checkpoint, 'UTC', "yyyy-MM-dd'T'HH:mm:ss'Z'"));
+
+  logSheet.clear();
+  logSheet.getRange(1, 1).setValue('Đồng bộ lúc: ' + new Date());
+  logSheet.getRange(2, 1).setValue('Khoảng thời gian quét: ' + startTime + ' -> ' + endTime);
+  logSheet.getRange(3, 1).setValue('Tổng giao dịch lấy được: ' + items.length + ' | Dòng mới thêm vào sheet: ' + addedCount);
+}
+
+/* ---------- Trigger tự động ---------- */
+
+function setupHourlyTrigger() {
+  removeTriggers();
+  ScriptApp.newTrigger('syncCashFlow').timeBased().everyHours(1).create();
+  SpreadsheetApp.getUi().alert('Đã bật tự động đồng bộ mỗi giờ. Sheet sẽ tự cập nhật kể cả khi anh không mở web/sheet.');
+}
+
+function removeTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function (t) {
+    if (t.getHandlerFunction() === 'syncCashFlow') ScriptApp.deleteTrigger(t);
+  });
+}

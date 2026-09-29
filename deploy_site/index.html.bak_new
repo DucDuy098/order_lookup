@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tra cứu Cost Đơn Hàng — Order Nexus</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  /* ===== Order Nexus — refined dark UI ===== */
+  :root{
+    --ink:#0f0c17; --panel:#171320; --panel-2:#1c1826;
+    --line:rgba(255,255,255,0.09); --line-strong:rgba(255,255,255,0.16);
+    --text:#eae7f2; --text-dim:#8b84a3; --text-faint:#5f5876;
+    --accent:#9d8cc4; --accent-strong:#c9befa;
+    --green:#7fd99a; --green-bg:rgba(127,217,154,0.10);
+    --amber:#e8b568; --amber-bg:rgba(232,181,104,0.10);
+    --red:#e8828a; --red-bg:rgba(232,130,138,0.10);
+  }
+  *{box-sizing:border-box;}
+  html{background:var(--ink);}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    color:var(--text);
+    margin:0;
+    background:var(--ink);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .container{max-width:1220px;margin:0 auto;}
+
+  /* ---- App shell: sidebar sát trái ---- */
+  .app-sidebar{
+    position:fixed;top:0;left:0;bottom:0;width:196px;
+    border-right:1px solid var(--line);padding:28px 16px;
+    overflow-y:auto;background:var(--ink);z-index:10;
+  }
+  .app-main{margin-left:196px;padding:26px 36px 40px;min-height:100vh;}
+  .sidebar-brand{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-faint);font-weight:600;padding:0 14px;margin-bottom:22px;}
+
+  @media (max-width: 720px){
+    .app-sidebar{position:static;width:100%;border-right:none;border-bottom:1px solid var(--line);padding:16px;}
+    .app-main{margin-left:0;padding:32px 20px 56px;}
+    .tabbar{flex-direction:row !important;overflow-x:auto;gap:4px !important;}
+  }
+
+  /* ---- Hero ---- */
+  .hero{padding:0 0 14px;margin-bottom:12px;border-bottom:1px solid var(--line);}
+  .hero-badge{
+    display:inline-block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--text-faint);font-weight:600;margin-bottom:6px;
+  }
+  h1{
+    font-weight:600;font-size:20px;margin:0 0 4px;color:var(--text);
+    letter-spacing:-0.01em;
+  }
+  .sub{color:var(--text-dim);font-size:13px;max-width:560px;line-height:1.5;margin:0;}
+
+  /* ---- Auth bar ---- */
+  #authBar{display:flex;justify-content:flex-start;margin:10px 0 14px;}
+  #userInfo{color:var(--green);font-size:12.5px;font-weight:600;margin-left:14px;align-self:center;}
+
+  /* ---- Cards ---- */
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:16px 20px; margin-bottom:12px;
+  }
+  .card-title{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-dim);font-weight:600;margin:0;}
+
+  button{cursor:pointer;border:none;border-radius:8px;padding:10px 18px;font-size:13.5px;font-weight:600;transition:background .12s ease, border-color .12s ease, opacity .12s ease;font-family:inherit;}
+  .btn-primary{background:var(--text);color:var(--ink);}
+  .btn-primary:hover{background:var(--accent-strong);}
+  .btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-secondary{background:transparent;color:var(--text);border:1px solid var(--line-strong);}
+  .btn-secondary:hover{background:var(--panel-2);border-color:var(--text-dim);}
+  .btn-danger{background:transparent;color:var(--red);border:1px solid rgba(232,130,138,0.35);padding:5px 12px;font-size:12px;}
+  .btn-danger:hover{background:var(--red-bg);}
+
+  input,select{
+    padding:10px 12px;border:1px solid var(--line-strong);border-radius:8px;font-size:13.5px;
+    background:var(--ink);color:var(--text);font-family:inherit;
+  }
+  input::placeholder{color:var(--text-faint);}
+  input:focus,select:focus{outline:none;border-color:var(--accent);}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:10px 10px;border-bottom:1px solid var(--line);}
+  th{color:var(--text-faint);font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;}
+  td a{color:var(--accent-strong);text-decoration:none;}
+  td a:hover{text-decoration:underline;}
+  tbody tr:hover{background:var(--panel-2);}
+
+  .row-flex{display:flex;gap:10px;flex-wrap:wrap;align-items:end;}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field label{font-size:11px;color:var(--text-dim);}
+
+  #tab-search .card:first-child{max-width:680px;}
+  #tab-sources .card{max-width:920px;}
+  #colPicker{overflow-x:hidden;}
+  #colPickerRows{max-width:100%;}
+  #tab-sources table{table-layout:fixed;}
+  #tab-sources th:last-child,#tab-sources td:last-child{width:130px;}
+  #searchRow{display:flex;gap:10px;}
+  #searchRow input{flex:1;font-size:15px;padding:13px 14px;}
+  #resultsArea{max-width:680px;}
+
+  .result{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden;background:var(--panel);}
+  .result-header{padding:11px 16px;font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px;border-left:2px solid transparent;}
+  .hit .result-header{color:var(--green);border-left-color:var(--green);}
+  .miss .result-header{color:var(--text-faint);font-weight:500;}
+  .error .result-header{color:var(--red);border-left-color:var(--red);}
+  .rowTable{padding:4px 16px 14px;}
+  .rowTable td:first-child{color:var(--text-dim);width:35%;}
+  .costRow td{color:var(--amber);font-weight:700;}
+
+  .hidden{display:none !important;}
+  #status{font-size:12.5px;color:var(--text-faint);margin-top:6px;}
+  #resultsArea{margin-top:4px;}
+  .badge{display:inline-block;color:var(--text-dim);border:1px solid var(--line-strong);border-radius:4px;padding:2px 8px;font-size:10.5px;font-weight:500;}
+
+  footer{text-align:center;color:var(--text-faint);font-size:12px;margin-top:48px;}
+
+  #tab-allorders.tab-panel{height:calc(100vh - 240px);}
+  #tab-allorders .card{display:flex;flex-direction:column;height:100%;overflow:hidden;}
+  #allOrdersControls{display:flex;flex-direction:column;flex:1;min-height:0;}
+  #allOrdersTableWrap{flex:1;min-height:0;}
+  #allOrdersTableWrap table{font-size:13px;}
+  #allOrdersTableWrap thead th{position:sticky;top:0;background:var(--panel);z-index:1;}
+  .detail-row td{background:var(--ink);padding:0 !important;}
+  .btn-mini{padding:5px 12px;font-size:12px;}
+  #allOrdersPager button{padding:7px 14px;font-size:13px;}
+
+  /* ---- Tabbar (trong sidebar) ---- */
+  .tabbar{display:flex;flex-direction:column;gap:2px;}
+  .tab-btn{
+    background:transparent;color:var(--text-dim);border:none;border-left:2px solid transparent;border-radius:0;
+    padding:10px 14px;font-size:13.5px;font-weight:500;text-align:left;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{color:var(--text);border-left-color:var(--accent-strong);font-weight:600;background:var(--panel);border-radius:6px;}
+  .tab-panel.hidden{display:none !important;}
+  .filter-select{min-width:170px;}
+</style>
+</head>
+<body>
+
+<div class="app-sidebar">
+  <div class="sidebar-brand">Order Nexus</div>
+  <div class="tabbar hidden" id="tabbarNav">
+    <button class="tab-btn active" data-tab="search">Tra cứu</button>
+    <button class="tab-btn" data-tab="allorders">Tất cả đơn hàng</button>
+    <button class="tab-btn" data-tab="pingpong">PingPong</button>
+    <button class="tab-btn" data-tab="sources">Sheet nguồn</button>
+  </div>
+</div>
+
+<div class="app-main">
+<div class="container">
+
+  <div class="hero">
+    <div class="hero-badge">Order Nexus</div>
+    <h1>Tra cứu Cost Đơn Hàng</h1>
+    <div class="sub">Nhập Order ID → tự động quét khắp các sheet nguồn, hiện đơn đang nằm ở đâu và cost chính xác bao nhiêu.</div>
+  </div>
+
+  <div id="authBar">
+    <div style="text-align:left;">
+      <button id="signinBtn" class="btn-primary">Đăng nhập Google</button>
+      <span id="userInfo" class="hidden"></span>
+    </div>
+  </div>
+
+  <div id="mainSection" class="hidden">
+    <div class="tab-panel" id="tab-search">
+      <div class="card">
+        <p class="card-title" style="margin-bottom:8px;">Tra cứu theo Order ID</p>
+        <div id="searchRow">
+          <input id="orderIdInput" placeholder="Nhập Order ID cần tra cứu..." autocomplete="off">
+          <button id="searchBtn" class="btn-primary">Tìm</button>
+        </div>
+        <div id="status"></div>
+      </div>
+      <div id="resultsArea"></div>
+    </div>
+
+    <div class="tab-panel hidden" id="tab-allorders">
+      <div class="card">
+        <div class="row-flex" style="justify-content:space-between;margin-bottom:6px;">
+          <p class="card-title">Tất cả đơn hàng</p>
+          <button id="loadAllBtn" class="btn-secondary">Tải danh sách</button>
+        </div>
+        <div id="allOrdersControls" class="hidden" style="margin-top:6px;">
+          <div class="row-flex" style="margin-bottom:6px;">
+            <input id="allOrdersFilter" placeholder="Lọc theo Order ID..." style="flex:2;min-width:200px;">
+            <select id="allOrdersSourceFilter" class="filter-select"><option value="">Tất cả nguồn</option></select>
+            <select id="allOrdersTabFilter" class="filter-select"><option value="">Tất cả tab</option></select>
+          </div>
+          <div id="allOrdersStatus" class="sub" style="margin-bottom:6px;"></div>
+          <div id="allOrdersTableWrap" style="overflow:auto;border:1px solid var(--border);border-radius:10px;"></div>
+          <div id="allOrdersPager" style="margin-top:8px;text-align:center;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel hidden" id="tab-pingpong">
+      <div class="card">
+        <p class="card-title" style="margin-bottom:8px;">Cấu hình sheet PingPong Cash Flow</p>
+        <div class="row-flex">
+          <div class="field" style="flex:1;min-width:260px;"><label>Link Google Sheet</label><input id="pingpongUrlInput" placeholder="https://docs.google.com/spreadsheets/d/..."></div>
+          <div class="field"><label>Tên tab</label><input id="pingpongTabInput" placeholder="PingPong Cash Flow" value="PingPong Cash Flow"></div>
+          <button id="pingpongSaveConfigBtn" class="btn-primary">Lưu</button>
+        </div>
+        <div id="pingpongConfigStatus" class="sub" style="margin-top:6px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:14px;">
+        <div class="row-flex" style="justify-content:space-between;margin-bottom:6px;">
+          <p class="card-title">Lịch sử dòng tiền PingPong</p>
+          <button id="pingpongLoadBtn" class="btn-secondary">Tải danh sách</button>
+        </div>
+        <div id="pingpongControls" class="hidden" style="margin-top:6px;">
+          <div class="row-flex" style="margin-bottom:6px;">
+            <input id="pingpongFilter" placeholder="Lọc theo Order ID, đối tác, reference..." style="flex:2;min-width:220px;">
+            <select id="pingpongTypeFilter" class="filter-select"><option value="">Tất cả loại</option></select>
+          </div>
+          <div id="pingpongStatus" class="sub" style="margin-bottom:6px;"></div>
+          <div id="pingpongTableWrap" style="overflow:auto;border:1px solid var(--border);border-radius:10px;"></div>
+          <div id="pingpongPager" style="margin-top:8px;text-align:center;"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel hidden" id="tab-sources">
+      <div class="card">
+        <div class="row-flex" style="justify-content:space-between;margin-bottom:2px;">
+          <p class="card-title">Sheet nguồn</p>
+          <div class="row-flex" style="gap:8px;">
+            <button id="copyConfigBtn" class="btn-secondary">Copy cấu hình cho Apps Script</button>
+            <button id="importConfigBtn" class="btn-secondary">Nhập / Thay thế danh sách chung</button>
+            <button id="toggleAddForm" class="btn-secondary">+ Thêm sheet</button>
+          </div>
+        </div>
+        <div class="sub" style="margin-bottom:8px;">Danh sách này dùng chung cho mọi trình duyệt/tài khoản (lưu trên Supabase) — ai sửa, mọi người đều thấy ngay.</div>
+
+        <table id="sourceTable">
+          <thead>
+            <tr><th>Tên</th><th>Sheet</th><th>Tab</th><th>Cột Order ID</th><th>Cột Cost</th><th></th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <form id="addSourceForm" class="hidden" style="margin-top:16px;">
+          <input type="hidden" id="editingIndex" value="">
+          <div class="row-flex">
+            <div class="field"><label>Tên hiển thị</label><input name="name" required placeholder="VD: Bên 6"></div>
+            <div class="field" style="flex:1;min-width:220px;"><label>Link Google Sheet</label><input name="url" required placeholder="https://docs.google.com/spreadsheets/d/..."></div>
+            <div class="field"><label>Tab (để trống = tất cả tab, cách nhau bằng dấu phẩy nếu nhiều tab)</label><input name="tab" placeholder="VD: T8 hoặc T7, T8"></div>
+          </div>
+          <div class="row-flex" style="margin-top:10px;">
+            <button type="button" id="previewColsBtn" class="btn-secondary btn-mini">Xem cột trong sheet</button>
+          </div>
+          <div id="colPicker" class="hidden" style="margin-top:10px;padding:12px;border:1px dashed var(--border);border-radius:10px;">
+            <div id="colPickerTabList" style="font-size:11.5px;color:var(--muted);margin-bottom:8px;overflow-wrap:anywhere;"></div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Chọn đúng dòng tiêu đề của sheet, rồi chọn cột Order ID / Cost tương ứng:</div>
+            <div id="colPickerRows"></div>
+            <div class="row-flex" style="margin-top:10px;">
+              <div class="field"><label>→ Cột Order ID</label><select id="colPickerOrderSelect"></select></div>
+              <div class="field"><label>→ Cột Cost</label><select id="colPickerCostSelect"></select></div>
+            </div>
+          </div>
+          <div class="row-flex" style="margin-top:10px;">
+            <div class="field"><label>Cột Order ID</label><input name="orderCol" required placeholder="Tên header, VD: Order ID"></div>
+            <div class="field"><label>Cột Cost</label><input name="costCol" placeholder="Tên header hoặc chữ cột, VD: L"></div>
+            <button type="submit" id="addSourceFormSubmitBtn" class="btn-primary">Lưu</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <footer>Order Nexus</footer>
+</div>
+</div>
+
+<script>
+/* ============ CẤU HÌNH - ĐIỀN CLIENT ID SAU KHI TẠO Ở GOOGLE CLOUD CONSOLE ============ */
+const CLIENT_ID = '67677785348-42tu6un158a5srq2hh0411909sbfmcv6.apps.googleusercontent.com';
+/* ====================================================================================== */
+
+/* ============ Supabase — danh sách "Sheet nguồn" dùng CHUNG cho mọi trình duyệt/tài khoản ============ */
+const SUPABASE_URL = 'https://mmmvdvwizkysgdsqwcdr.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1tbXZkdndpemt5c2dkc3F3Y2RyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxMTEzMTksImV4cCI6MjEwMjY4NzMxOX0.RslmLspDW6hAbG0b0k3dx1KxJYlNdJyjgOPk8JGtS_I';
+const SUPABASE_HEADERS = {
+  apikey: SUPABASE_ANON_KEY,
+  Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+  'Content-Type': 'application/json'
+};
+/* ======================================================================================================= */
+
+const SCOPES = 'https://www.googleapis.com/auth/spreadsheets.readonly';
+let accessToken = null;
+let tokenClient = null;
+let sourcesCache = [];
+
+function initGis(){
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CLIENT_ID,
+    scope: SCOPES,
+    callback: async (resp) => {
+      if (resp.error) { alert('Đăng nhập lỗi: ' + resp.error); return; }
+      accessToken = resp.access_token;
+      document.getElementById('mainSection').classList.remove('hidden');
+      document.getElementById('tabbarNav').classList.remove('hidden');
+      document.getElementById('signinBtn').classList.add('hidden');
+      const info = document.getElementById('userInfo');
+      info.textContent = 'Đã đăng nhập';
+      info.classList.remove('hidden');
+      await loadSources();
+    }
+  });
+}
+window.addEventListener('load', () => {
+  if (CLIENT_ID.indexOf('DÁN_CLIENT_ID') === 0) {
+    document.getElementById('signinBtn').textContent = 'Chưa cấu hình Client ID (xem HUONG_DAN.md)';
+    document.getElementById('signinBtn').disabled = true;
+    return;
+  }
+  initGis();
+});
+document.getElementById('signinBtn').addEventListener('click', () => tokenClient.requestAccessToken());
+
+/* ---------- Quản lý sheet nguồn (dùng CHUNG cho mọi trình duyệt/tài khoản, lưu ở Supabase) ---------- */
+function rowToSource(row){
+  return { id: row.id, name: row.name || '', url: row.url || '', tab: row.tab || '', orderCol: row.order_col || '', costCol: row.cost_col || '' };
+}
+function sourceToRow(src){
+  return { name: src.name, url: src.url, tab: src.tab || '', order_col: src.orderCol || '', cost_col: src.costCol || '' };
+}
+async function sbFetch(path, options = {}){
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: { ...SUPABASE_HEADERS, ...(options.headers || {}) }
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Supabase lỗi (HTTP ${res.status}): ${text}`);
+  }
+  return res;
+}
+async function fetchSourcesFromDB(){
+  const res = await sbFetch('sources?select=*&order=id.asc');
+  return (await res.json()).map(rowToSource);
+}
+async function migrateLocalSourcesIfAny(){
+  // Nếu bảng chung trên Supabase đang trống VÀ trình duyệt này còn danh sách cũ (kiểu lưu cũ, trước khi
+  // chuyển sang dùng chung) -> tự động đưa danh sách cũ đó lên Supabase 1 lần duy nhất, để không mất dữ liệu.
+  try {
+    const raw = localStorage.getItem('costSources');
+    const localList = raw ? JSON.parse(raw) : null;
+    if (!localList || !localList.length) return false;
+    await sbFetch('sources', { method: 'POST', body: JSON.stringify(localList.map(sourceToRow)), headers: { Prefer: 'return=minimal' } });
+    return true;
+  } catch (e) { return false; }
+}
+async function loadSourcesFromDB(){
+  let list = await fetchSourcesFromDB();
+  if (!list.length) {
+    const migrated = await migrateLocalSourcesIfAny();
+    if (migrated) list = await fetchSourcesFromDB();
+  }
+  return list;
+}
+function getSources(){ return sourcesCache; }
+async function loadSources(){
+  try {
+    sourcesCache = await loadSourcesFromDB();
+  } catch (e) {
+    alert('Không tải được danh sách "Sheet nguồn" dùng chung từ Supabase: ' + e.message);
+    sourcesCache = sourcesCache || [];
+  }
+  renderSourceTable();
+}
+function renderSourceTable(){
+  const list = getSources();
+  const tbody = document.querySelector('#sourceTable tbody');
+  tbody.innerHTML = '';
+  list.forEach((s) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(s.name)}</td>
+      <td><a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">mở sheet ↗</a></td>
+      <td>${s.tab ? escapeHtml(s.tab) : '<span style="color:#8479a3">tất cả tab</span>'}</td>
+      <td>${escapeHtml(s.orderCol)}</td>
+      <td>${s.costCol ? escapeHtml(s.costCol) : '<span style="color:#8479a3">tự nhận diện</span>'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn-secondary btn-mini" data-edit-id="${s.id}">Sửa</button>
+        <button class="btn-danger" data-id="${s.id}">Xoá</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('button.btn-danger').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Xoá nguồn này khỏi danh sách DÙNG CHUNG cho mọi người?')) return;
+      btn.disabled = true;
+      try {
+        await sbFetch(`sources?id=eq.${btn.dataset.id}`, { method: 'DELETE' });
+        await loadSources();
+      } catch (e) {
+        alert('Xoá thất bại: ' + e.message);
+        btn.disabled = false;
+      }
+    });
+  });
+  tbody.querySelectorAll('button[data-edit-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const s = getSources().find(x => String(x.id) === String(btn.dataset.editId));
+      if (!s) return;
+      const f = document.getElementById('addSourceForm');
+      f.name.value = s.name;
+      f.url.value = s.url;
+      f.tab.value = s.tab || '';
+      f.orderCol.value = s.orderCol || '';
+      f.costCol.value = s.costCol || '';
+      document.getElementById('editingIndex').value = s.id;
+      document.getElementById('addSourceFormSubmitBtn').textContent = 'Cập nhật';
+      document.getElementById('colPicker').classList.add('hidden');
+      f.classList.remove('hidden');
+      f.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  });
+}
+document.getElementById('copyConfigBtn').addEventListener('click', async () => {
+  const list = getSources();
+  if (!list.length) { alert('Chưa có nguồn nào để copy.'); return; }
+  // TSV (tab-separated) để dán thẳng vào Google Sheet, tự điền đúng 5 cột 1 lần.
+  const tsv = list.map(s => [s.name, s.url, s.tab || '', s.orderCol || '', s.costCol || ''].join('\t')).join('\n');
+  const btn = document.getElementById('copyConfigBtn');
+  const oldText = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(tsv);
+    btn.textContent = 'Đã copy!';
+  } catch (e) {
+    alert('Không copy được tự động, anh copy đoạn dưới đây rồi dán vào Google Sheet:\n\n' + tsv);
+  }
+  setTimeout(() => { btn.textContent = oldText; }, 1800);
+});
+document.getElementById('importConfigBtn').addEventListener('click', async () => {
+  const text = prompt('Dán cấu hình (dùng nút "Copy cấu hình cho Apps Script") vào đây.\n\nLƯU Ý: thao tác này sẽ THAY THẾ toàn bộ danh sách "Sheet nguồn" dùng chung — áp dụng cho TẤT CẢ mọi người, không chỉ trình duyệt này.');
+  if (!text || !text.trim()) return;
+  const lines = text.trim().split('\n').map(l => l.split('\t'));
+  const list = lines.map(cols => ({
+    name: (cols[0] || '').trim(),
+    url: (cols[1] || '').trim(),
+    tab: (cols[2] || '').trim(),
+    orderCol: (cols[3] || '').trim(),
+    costCol: (cols[4] || '').trim()
+  })).filter(s => s.name && s.url);
+  if (!list.length) { alert('Không đọc được nguồn nào từ đoạn vừa dán — kiểm tra lại đã copy đúng chưa.'); return; }
+  if (!confirm(`Sẽ thay thế danh sách nguồn dùng chung hiện tại (${getSources().length} nguồn) bằng ${list.length} nguồn vừa dán. Tiếp tục?`)) return;
+
+  const btn = document.getElementById('importConfigBtn');
+  btn.disabled = true;
+  try {
+    const existing = getSources();
+    if (existing.length) {
+      await sbFetch(`sources?id=in.(${existing.map(s => s.id).join(',')})`, { method: 'DELETE' });
+    }
+    await sbFetch('sources', { method: 'POST', body: JSON.stringify(list.map(sourceToRow)), headers: { Prefer: 'return=minimal' } });
+    await loadSources();
+    alert('Đã nhập ' + list.length + ' nguồn — dùng chung cho tất cả mọi người từ giờ.');
+  } catch (e) {
+    alert('Nhập thất bại: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('toggleAddForm').addEventListener('click', () => {
+  const form = document.getElementById('addSourceForm');
+  const willShow = form.classList.contains('hidden');
+  if (willShow) {
+    form.reset();
+    document.getElementById('editingIndex').value = '';
+    document.getElementById('addSourceFormSubmitBtn').textContent = 'Lưu';
+    document.getElementById('colPicker').classList.add('hidden');
+  }
+  form.classList.toggle('hidden');
+});
+document.getElementById('addSourceForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  const newSrc = {
+    name: f.name.value.trim(),
+    url: f.url.value.trim(),
+    tab: f.tab.value.trim(),
+    orderCol: f.orderCol.value.trim(),
+    costCol: f.costCol.value.trim()
+  };
+  const editingId = document.getElementById('editingIndex').value;
+  const submitBtn = document.getElementById('addSourceFormSubmitBtn');
+  submitBtn.disabled = true;
+  try {
+    if (editingId !== '') {
+      await sbFetch(`sources?id=eq.${editingId}`, { method: 'PATCH', body: JSON.stringify(sourceToRow(newSrc)) });
+    } else {
+      await sbFetch('sources', { method: 'POST', body: JSON.stringify(sourceToRow(newSrc)), headers: { Prefer: 'return=minimal' } });
+    }
+    await loadSources();
+    f.reset();
+    document.getElementById('editingIndex').value = '';
+    submitBtn.textContent = 'Lưu';
+    document.getElementById('addSourceForm').classList.add('hidden');
+    document.getElementById('colPicker').classList.add('hidden');
+  } catch (err) {
+    alert('Lưu thất bại: ' + err.message);
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+/* ---------- Xem trước & chọn cột từ sheet ---------- */
+function indexToColLetter(idx){
+  let s = '', n = idx + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+async function previewSheetColumns(){
+  const f = document.getElementById('addSourceForm');
+  const url = f.url.value.trim();
+  const tab = f.tab.value.trim();
+  if (!url) { alert('Điền Link Google Sheet trước đã.'); return; }
+  const btn = document.getElementById('previewColsBtn');
+  const oldText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Đang tải...';
+  try {
+    const sheetId = extractSheetId(url);
+    const allTabs = await fetchAllTabNames(sheetId);
+    const wantedTabs = tab.split(',').map(s => s.trim()).filter(Boolean);
+    const firstTab = wantedTabs[0];
+    const tabName = firstTab || allTabs[0];
+    if (!tabName) { alert('Không tìm thấy tab nào trong sheet này.'); return; }
+
+    const tabListDiv = document.getElementById('colPickerTabList');
+    const notFound = wantedTabs.filter(t => !allTabs.includes(t));
+    let tabListHtml = 'Các tab thực tế trong sheet (' + allTabs.length + '): ' + allTabs.map(t => `<code>${escapeHtml(t)}</code>`).join(', ');
+    if (notFound.length) {
+      tabListHtml += `<div style="color:var(--red, #e05d5d);margin-top:6px;">⚠ Không khớp chính xác: ${notFound.map(t => `"${escapeHtml(t)}"`).join(', ')} — kiểm tra lại chính tả/khoảng trắng trong ô Tab.</div>`;
+    }
+    tabListDiv.innerHTML = tabListHtml;
+
+    const values = await fetchTabValues(sheetId, tabName);
+    if (!values.length) { alert('Tab "' + tabName + '" đang trống (không có dữ liệu nào theo Google Sheets API).'); return; }
+
+    const previewRows = values.slice(0, 5);
+    window.__colPickerRows = previewRows;
+
+    const truncate = (s, n) => (s.length > n ? s.slice(0, n) + '…' : s);
+    const rowsDiv = document.getElementById('colPickerRows');
+    rowsDiv.innerHTML = previewRows.map((row, i) => {
+      const preview = row.slice(0, 6).map(c => truncate(String(c || '(trống)'), 28)).join(' | ');
+      return `<label style="display:block;font-size:12px;margin-bottom:6px;cursor:pointer;overflow-wrap:anywhere;">
+        <input type="radio" name="colPickerHeaderRow" value="${i}" ${i === 0 ? 'checked' : ''}> Dòng ${i + 1}: ${escapeHtml(preview)}${row.length > 6 ? ' …' : ''}
+      </label>`;
+    }).join('');
+    document.getElementById('colPicker').classList.remove('hidden');
+    populateColSelects(0);
+    rowsDiv.querySelectorAll('input[name="colPickerHeaderRow"]').forEach(r => {
+      r.addEventListener('change', (e) => populateColSelects(parseInt(e.target.value, 10)));
+    });
+  } catch (err) {
+    alert('Lỗi khi đọc sheet: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = oldText;
+  }
+}
+function populateColSelects(rowIdx){
+  const row = (window.__colPickerRows && window.__colPickerRows[rowIdx]) || [];
+  const orderSel = document.getElementById('colPickerOrderSelect');
+  const costSel = document.getElementById('colPickerCostSelect');
+  const optionsHtml = row.map((cell, c) => {
+    const letter = indexToColLetter(c);
+    const text = String(cell || '').trim();
+    const label = text ? `${letter}: ${text}` : `${letter}: (trống)`;
+    const value = text ? text : letter;
+    return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+  }).join('');
+  orderSel.innerHTML = '<option value="">— chọn cột —</option>' + optionsHtml;
+  costSel.innerHTML = '<option value="">— chọn cột —</option>' + optionsHtml;
+}
+document.getElementById('previewColsBtn').addEventListener('click', previewSheetColumns);
+document.getElementById('colPickerOrderSelect').addEventListener('change', (e) => {
+  if (e.target.value) document.querySelector('#addSourceForm input[name="orderCol"]').value = e.target.value;
+});
+document.getElementById('colPickerCostSelect').addEventListener('change', (e) => {
+  document.querySelector('#addSourceForm input[name="costCol"]').value = e.target.value;
+});
+
+/* ---------- Gọi Google Sheets API ---------- */
+function extractSheetId(url){
+  const m = url.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return m ? m[1] : url.trim();
+}
+async function resolveTabNames(src, sheetId){
+  if (!src.tab) return await fetchAllTabNames(sheetId);
+  return src.tab.split(',').map(s => s.trim()).filter(Boolean);
+}
+async function fetchAllTabNames(sheetId){
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?fields=sheets.properties.title`,
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!res.ok) throw new Error('Không mở được sheet (HTTP ' + res.status + ')');
+  const data = await res.json();
+  return (data.sheets || []).map(s => s.properties.title);
+}
+async function fetchTabValues(sheetId, tabName){
+  // Bọc tên tab trong dấu nháy đơn theo cú pháp A1 notation của Google Sheets API.
+  // Nếu không có dấu nháy, tên tab trùng cú pháp ô (VD "T7" = cột T dòng 7) sẽ bị Google hiểu nhầm
+  // thành 1 ô đơn lẻ trên sheet mặc định thay vì tên tab thật -> trả về dữ liệu sai/gần như trống.
+  const range = "'" + tabName.replace(/'/g, "''") + "'";
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(range)}?majorDimension=ROWS`,
+    { headers: { Authorization: 'Bearer ' + accessToken } });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  return data.values || [];
+}
+function colLetterToIndex(letters){
+  let n = 0;
+  for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
+  return n - 1;
+}
+function findHeaderAndCol(values, headerText){
+  // Tìm dòng tiêu đề chứa đúng headerText trong 5 dòng đầu (không phân biệt hoa thường/khoảng trắng)
+  const target = headerText.trim().toLowerCase();
+  for (let r = 0; r < Math.min(5, values.length); r++) {
+    for (let c = 0; c < values[r].length; c++) {
+      if (String(values[r][c] || '').trim().toLowerCase() === target) {
+        return { rowIdx: r, colIdx: c };
+      }
+    }
+  }
+  return null;
+}
+function isPlausibleOrderId(s){
+  // Loại bỏ các dòng rác kiểu ghi chú/thông báo dài (thường nằm chung cột do merge cell),
+  // Order ID thật thường ngắn, không xuống dòng, không chứa nhiều khoảng trắng liên tiếp như câu văn.
+  if (!s) return false;
+  if (s.length > 40) return false;
+  if (/\n/.test(s)) return false;
+  if ((s.match(/\s/g) || []).length >= 3) return false;
+  return true;
+}
+function isColLetterSpec(spec){
+  return !!spec && /^[A-Za-z]{1,3}$/.test(spec.trim());
+}
+function resolveColIndex(values, headerRowIdx, colSpec){
+  if (!colSpec) return -1;
+  const spec = colSpec.trim();
+  if (isColLetterSpec(spec)) {
+    // spec toàn chữ cái ngắn (VD "L") -> hiểu là chữ cột
+    return colLetterToIndex(spec);
+  }
+  const header = values[headerRowIdx] || [];
+  for (let c = 0; c < header.length; c++) {
+    if (String(header[c] || '').trim().toLowerCase() === spec.toLowerCase()) return c;
+  }
+  return -1;
+}
+// Giữ tên cũ để không phải sửa chỗ khác lỡ còn gọi tới
+const resolveCostColIndex = resolveColIndex;
+function locateHeaderRow(values, orderColSpec, costColSpec){
+  // Ưu tiên tìm dòng tiêu đề bằng cột nào đang khai theo TÊN (không phải chữ cột),
+  // vì chữ cột không cho biết dòng tiêu đề nằm ở đâu.
+  if (orderColSpec && !isColLetterSpec(orderColSpec)) {
+    const hit = findHeaderAndCol(values, orderColSpec);
+    if (hit) return hit.rowIdx;
+  }
+  if (costColSpec && !isColLetterSpec(costColSpec)) {
+    const hit = findHeaderAndCol(values, costColSpec);
+    if (hit) return hit.rowIdx;
+  }
+  return 0; // cả 2 đều là chữ cột (hoặc không tìm được) -> mặc định dòng đầu tiên là tiêu đề
+}
+function escapeHtml(str){
+  return String(str == null ? '' : str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function parseMoneyValue(raw){
+  if (typeof raw === 'number') return raw;
+  if (raw == null) return NaN;
+  let s = String(raw).trim();
+  s = s.replace(/[^\d.,\-]/g, '');
+  if (!s) return NaN;
+  const lastDot = s.lastIndexOf('.');
+  const lastComma = s.lastIndexOf(',');
+  const lastSep = Math.max(lastDot, lastComma);
+  if (lastSep === -1) return parseFloat(s);
+  const decimalsLen = s.length - lastSep - 1;
+  if (decimalsLen === 1 || decimalsLen === 2) {
+    const intPart = s.slice(0, lastSep).replace(/[.,]/g, '');
+    const decPart = s.slice(lastSep + 1);
+    return parseFloat((intPart || '0') + '.' + decPart);
+  }
+  return parseFloat(s.replace(/[.,]/g, ''));
+}
+function formatMoneyValue(n){
+  return n.toLocaleString('vi-VN', { maximumFractionDigits: 2 });
+}
+
+/* ---------- Tìm kiếm ---------- */
+async function searchOrderId(){
+  const orderId = document.getElementById('orderIdInput').value.trim();
+  const resultsArea = document.getElementById('resultsArea');
+  const status = document.getElementById('status');
+  if (!orderId) return;
+  resultsArea.innerHTML = '';
+  status.textContent = 'Đang tìm...';
+
+  const sources = getSources();
+  const blocks = await Promise.all(sources.map(src => searchInSource(src, orderId)));
+  status.textContent = 'Xong lúc ' + new Date().toLocaleTimeString('vi-VN');
+  resultsArea.innerHTML = blocks.join('');
+}
+
+async function searchInSource(src, orderId){
+  try {
+    const sheetId = extractSheetId(src.url);
+    const tabNames = await resolveTabNames(src, sheetId);
+    let hits = [];
+
+    for (const tabName of tabNames) {
+      let values;
+      try { values = await fetchTabValues(sheetId, tabName); }
+      catch (e) { continue; }
+      if (!values.length) continue;
+
+      const headerRowIdx = locateHeaderRow(values, src.orderCol, src.costCol);
+      const orderColIdx = resolveColIndex(values, headerRowIdx, src.orderCol);
+      if (orderColIdx === -1) continue;
+      const costColIdx = resolveColIndex(values, headerRowIdx, src.costCol);
+
+      for (let r = headerRowIdx + 1; r < values.length; r++) {
+        const cell = String(values[r][orderColIdx] || '').trim();
+        if (cell === orderId) {
+          hits.push({ tabName, rowNum: r + 1, header: values[headerRowIdx], row: values[r], costColIdx });
+        }
+      }
+    }
+
+    if (!hits.length) {
+      return `<div class="result miss"><div class="result-header">${escapeHtml(src.name)} — không có đơn này</div></div>`;
+    }
+
+    let html = '';
+
+    if (hits.length > 1 && hits[0].costColIdx >= 0) {
+      const validCosts = hits
+        .map(h => parseMoneyValue(h.row[h.costColIdx]))
+        .filter(n => !isNaN(n));
+      if (validCosts.length) {
+        const sum = validCosts.reduce((a, b) => a + b, 0);
+        html += `<div class="result hit" style="border-left:2px solid var(--amber);">
+          <div class="result-header" style="color:var(--amber);border-left-color:var(--amber);">
+            ${escapeHtml(src.name)} — khớp ${hits.length} dòng (đơn gộp) · <strong>Tổng cost: ${formatMoneyValue(sum)}</strong>
+          </div>
+        </div>`;
+      }
+    }
+
+    hits.forEach(hit => {
+      let rows = '';
+      for (let c = 0; c < hit.row.length; c++) {
+        const h = hit.header[c] || ('Cột ' + (c + 1));
+        if (!h) continue;
+        const isCost = c === hit.costColIdx || (!src.costCol && /giá|cost|tiền|price/i.test(h));
+        rows += `<tr class="${isCost ? 'costRow' : ''}"><td>${escapeHtml(h)}</td><td>${escapeHtml(hit.row[c])}</td></tr>`;
+      }
+      html += `<div class="result hit">
+        <div class="result-header">${escapeHtml(src.name)} <span class="badge">${escapeHtml(hit.tabName)}</span></div>
+        <table class="rowTable">${rows}</table>
+      </div>`;
+    });
+    return html;
+  } catch (err) {
+    return `<div class="result error"><div class="result-header">${escapeHtml(src.name)} — lỗi: ${escapeHtml(err.message)}</div></div>`;
+  }
+}
+
+document.getElementById('searchBtn').addEventListener('click', searchOrderId);
+document.getElementById('orderIdInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') searchOrderId(); });
+
+/* ---------- Xem tất cả đơn hàng ---------- */
+let allOrdersData = [];
+let allOrdersPage = 1;
+const ALL_ORDERS_PAGE_SIZE = 50;
+
+async function loadAllOrders(){
+  const btn = document.getElementById('loadAllBtn');
+  const statusEl = document.getElementById('allOrdersStatus');
+  btn.disabled = true;
+  btn.textContent = 'Đang tải...';
+  document.getElementById('allOrdersControls').classList.remove('hidden');
+  statusEl.textContent = 'Đang quét tất cả sheet/tab, vui lòng đợi...';
+
+  const sources = getSources();
+  allOrdersData = [];
+  const debugLog = {}; // tên nguồn -> mảng dòng debug
+
+  await Promise.all(sources.map(async (src) => {
+    debugLog[src.name] = [];
+    try {
+      const sheetId = extractSheetId(src.url);
+      const tabNames = await resolveTabNames(src, sheetId);
+      if (!tabNames.length) debugLog[src.name].push('không xác định được tab nào để quét');
+
+      if (src.tab) {
+        const realTabs = await fetchAllTabNames(sheetId);
+        const missing = tabNames.filter(t => !realTabs.includes(t));
+        if (missing.length) {
+          debugLog[src.name].push(`tên tab "${missing.join(', ')}" không khớp chính xác với danh sách tab thật trong sheet (${realTabs.join(', ')}) — kiểm tra khoảng trắng/chính tả`);
+        }
+      }
+
+      await Promise.all(tabNames.map(async (tabName) => {
+        let values;
+        try { values = await fetchTabValues(sheetId, tabName); }
+        catch (e) { debugLog[src.name].push(`tab "${tabName}": lỗi tải (${e.message})`); return; }
+        if (!values.length) { debugLog[src.name].push(`tab "${tabName}": sheet trống`); return; }
+
+        const headerRowIdx = locateHeaderRow(values, src.orderCol, src.costCol);
+        const orderColIdx = resolveColIndex(values, headerRowIdx, src.orderCol);
+        if (orderColIdx === -1) {
+          debugLog[src.name].push(`tab "${tabName}": không tìm thấy cột Order ID ("${src.orderCol}") ở dòng ${headerRowIdx + 1}`);
+          return;
+        }
+        const costColIdx = resolveColIndex(values, headerRowIdx, src.costCol);
+
+        let addedInTab = 0;
+        for (let r = headerRowIdx + 1; r < values.length; r++) {
+          const oid = String(values[r][orderColIdx] || '').trim();
+          if (!oid || !isPlausibleOrderId(oid)) continue;
+          const cost = costColIdx >= 0 ? (values[r][costColIdx] || '') : '';
+          allOrdersData.push({
+            orderId: oid, source: src.name, tab: tabName, cost,
+            header: values[headerRowIdx], row: values[r]
+          });
+          addedInTab++;
+        }
+        if (!addedInTab) debugLog[src.name].push(`tab "${tabName}": ${values.length - headerRowIdx - 1} dòng dữ liệu nhưng 0 dòng có Order ID (cột ${orderColIdx >= 0 ? indexToColLetter(orderColIdx) : '?'})`);
+      }));
+    } catch (e) {
+      debugLog[src.name].push('lỗi mở sheet: ' + e.message);
+    }
+  }));
+
+  btn.disabled = false;
+  btn.textContent = 'Tải lại';
+  allOrdersPage = 1;
+  populateAllOrdersFilterOptions();
+  renderAllOrdersTable();
+
+  const existingWarn = document.getElementById('allOrdersWarn');
+  if (existingWarn) existingWarn.remove();
+  const failedSources = sources.filter(s => !allOrdersData.some(o => o.source === s.name)).map(s => s.name);
+  if (failedSources.length) {
+    const detailHtml = failedSources.map(name => {
+      const msgs = debugLog[name] || [];
+      const detail = msgs.length ? msgs.map(m => escapeHtml(m)).join('<br>&nbsp;&nbsp;· ') : '(không rõ lý do)';
+      return `<div style="margin-top:4px;"><strong>${escapeHtml(name)}</strong>:<br>&nbsp;&nbsp;· ${detail}</div>`;
+    }).join('');
+    statusEl.insertAdjacentHTML('afterend',
+      `<div id="allOrdersWarn" style="color:var(--red);font-size:12.5px;margin-top:4px;">Không lấy được dữ liệu từ các nguồn sau:${detailHtml}</div>`);
+  }
+}
+
+function populateAllOrdersFilterOptions(){
+  const sourceSel = document.getElementById('allOrdersSourceFilter');
+  const prevSource = sourceSel.value;
+
+  const sourceNames = [...new Set(allOrdersData.map(o => o.source))].sort();
+  sourceSel.innerHTML = '<option value="">Tất cả nguồn</option>' +
+    sourceNames.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+  if (sourceNames.includes(prevSource)) sourceSel.value = prevSource;
+
+  updateTabFilterOptions();
+}
+
+function updateTabFilterOptions(){
+  const sourceSel = document.getElementById('allOrdersSourceFilter');
+  const tabSel = document.getElementById('allOrdersTabFilter');
+  const prevTab = tabSel.value;
+  const sourceFilter = sourceSel.value;
+
+  const scoped = sourceFilter ? allOrdersData.filter(o => o.source === sourceFilter) : allOrdersData;
+  const tabNames = [...new Set(scoped.map(o => o.tab))].sort();
+
+  tabSel.innerHTML = '<option value="">Tất cả tab</option>' +
+    tabNames.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  tabSel.value = tabNames.includes(prevTab) ? prevTab : '';
+}
+
+function renderAllOrdersTable(){
+  const filterRaw = document.getElementById('allOrdersFilter').value.trim().toLowerCase();
+  const sourceFilter = document.getElementById('allOrdersSourceFilter').value;
+  const tabFilter = document.getElementById('allOrdersTabFilter').value;
+
+  let filtered = allOrdersData;
+  if (sourceFilter) filtered = filtered.filter(o => o.source === sourceFilter);
+  if (tabFilter) filtered = filtered.filter(o => o.tab === tabFilter);
+  if (filterRaw) {
+    filtered = filtered.filter(o =>
+      o.orderId.toLowerCase().includes(filterRaw) ||
+      o.source.toLowerCase().includes(filterRaw) ||
+      o.tab.toLowerCase().includes(filterRaw)
+    );
+  }
+
+  const isFiltered = !!(filterRaw || sourceFilter || tabFilter);
+  document.getElementById('allOrdersStatus').textContent =
+    `${filtered.length} đơn` + (isFiltered ? ` (lọc từ tổng ${allOrdersData.length})` : ` (tổng ${allOrdersData.length})`);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / ALL_ORDERS_PAGE_SIZE));
+  if (allOrdersPage > totalPages) allOrdersPage = totalPages;
+  const startIdx = (allOrdersPage - 1) * ALL_ORDERS_PAGE_SIZE;
+  const pageItems = filtered.slice(startIdx, startIdx + ALL_ORDERS_PAGE_SIZE);
+
+  let html = '<table><thead><tr><th>Order ID</th><th>Nguồn</th><th>Tab</th><th>Cost</th><th></th></tr></thead><tbody>';
+  pageItems.forEach((o) => {
+    const globalIdx = allOrdersData.indexOf(o);
+    html += `<tr>
+      <td>${escapeHtml(o.orderId)}</td>
+      <td>${escapeHtml(o.source)}</td>
+      <td>${escapeHtml(o.tab)}</td>
+      <td style="${o.cost ? 'color:var(--orange);font-weight:700;' : 'color:var(--muted);'}">${escapeHtml(o.cost || '—')}</td>
+      <td><button class="btn-secondary btn-mini" onclick="toggleOrderDetail(${globalIdx})">Chi tiết</button></td>
+    </tr>
+    <tr class="detail-row hidden" id="detail-${globalIdx}"><td colspan="5"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  if (!pageItems.length) html = '<div style="padding:20px;text-align:center;color:var(--muted);">Không có đơn nào khớp.</div>';
+  document.getElementById('allOrdersTableWrap').innerHTML = html;
+
+  document.getElementById('allOrdersPager').innerHTML = `
+    <button class="btn-secondary" onclick="changeAllOrdersPage(-1)" ${allOrdersPage <= 1 ? 'disabled' : ''}>‹ Trước</button>
+    <span style="margin:0 12px;color:var(--muted);font-size:13px;">Trang ${allOrdersPage}/${totalPages}</span>
+    <button class="btn-secondary" onclick="changeAllOrdersPage(1)" ${allOrdersPage >= totalPages ? 'disabled' : ''}>Sau ›</button>
+  `;
+}
+
+function changeAllOrdersPage(delta){ allOrdersPage += delta; renderAllOrdersTable(); }
+
+function toggleOrderDetail(idx){
+  const rowEl = document.getElementById('detail-' + idx);
+  if (!rowEl) return;
+  const o = allOrdersData[idx];
+  if (rowEl.classList.contains('hidden')) {
+    let rows = '';
+    for (let c = 0; c < o.row.length; c++) {
+      const h = o.header[c] || ('Cột ' + (c + 1));
+      if (!h) continue;
+      rows += `<tr><td style="color:var(--muted);width:35%;padding:6px 16px;">${escapeHtml(h)}</td><td style="padding:6px 16px;">${escapeHtml(o.row[c])}</td></tr>`;
+    }
+    rowEl.querySelector('td').innerHTML = `<table style="width:100%;">${rows}</table>`;
+    rowEl.classList.remove('hidden');
+  } else {
+    rowEl.classList.add('hidden');
+  }
+}
+
+document.getElementById('loadAllBtn').addEventListener('click', loadAllOrders);
+document.getElementById('allOrdersFilter').addEventListener('input', () => { allOrdersPage = 1; renderAllOrdersTable(); });
+document.getElementById('allOrdersSourceFilter').addEventListener('change', () => { updateTabFilterOptions(); allOrdersPage = 1; renderAllOrdersTable(); });
+document.getElementById('allOrdersTabFilter').addEventListener('change', () => { allOrdersPage = 1; renderAllOrdersTable(); });
+
+/* ---------- PingPong Cash Flow ---------- */
+let pingpongData = [];
+let pingpongPage = 1;
+const PINGPONG_PAGE_SIZE = 50;
+const PINGPONG_FIELD_MAP = [
+  ['orderId', 'order id'],
+  ['type', 'loại'],
+  ['status', 'trạng thái'],
+  ['partner', 'đối tác'],
+  ['partnerAccount', 'tk đối tác'],
+  ['partnerBank', 'ngân hàng đối tác'],
+  ['amountIn', 'tiền vào'],
+  ['curIn', 'tiền tệ vào'],
+  ['amountOut', 'tiền ra'],
+  ['curOut', 'tiền tệ ra'],
+  ['fee', 'phí'],
+  ['curFee', 'tiền tệ phí'],
+  ['fxRate', 'tỷ giá'],
+  ['reference', 'ghi chú / reference'],
+  ['originalOrderId', 'order id gốc'],
+  ['createdAt', 'thời gian tạo'],
+  ['completedAt', 'thời gian hoàn tất']
+];
+
+function getPingPongConfig(){
+  return {
+    url: localStorage.getItem('pingpongSheetUrl') || '',
+    tab: localStorage.getItem('pingpongSheetTab') || 'PingPong Cash Flow'
+  };
+}
+function fillPingPongConfigForm(){
+  const cfg = getPingPongConfig();
+  document.getElementById('pingpongUrlInput').value = cfg.url;
+  document.getElementById('pingpongTabInput').value = cfg.tab;
+}
+document.getElementById('pingpongSaveConfigBtn').addEventListener('click', () => {
+  const url = document.getElementById('pingpongUrlInput').value.trim();
+  const tab = document.getElementById('pingpongTabInput').value.trim() || 'PingPong Cash Flow';
+  if (!url) { alert('Điền Link Google Sheet trước đã.'); return; }
+  localStorage.setItem('pingpongSheetUrl', url);
+  localStorage.setItem('pingpongSheetTab', tab);
+  document.getElementById('pingpongConfigStatus').textContent = 'Đã lưu.';
+  setTimeout(() => { document.getElementById('pingpongConfigStatus').textContent = ''; }, 1800);
+});
+
+async function loadPingPongData(){
+  const cfg = getPingPongConfig();
+  const statusEl = document.getElementById('pingpongStatus');
+  const btn = document.getElementById('pingpongLoadBtn');
+  if (!cfg.url) { alert('Chưa cấu hình Link Google Sheet ở phần trên.'); return; }
+
+  document.getElementById('pingpongControls').classList.remove('hidden');
+  btn.disabled = true;
+  btn.textContent = 'Đang tải...';
+  statusEl.textContent = 'Đang tải dữ liệu...';
+
+  try {
+    const sheetId = extractSheetId(cfg.url);
+    const values = await fetchTabValues(sheetId, cfg.tab);
+    if (!values.length) {
+      pingpongData = [];
+      statusEl.textContent = 'Tab "' + cfg.tab + '" đang trống hoặc chưa từng chạy đồng bộ.';
+    } else {
+      const header = values[0].map(h => String(h || '').trim().toLowerCase());
+      const idx = {};
+      PINGPONG_FIELD_MAP.forEach(([key, label]) => { idx[key] = header.indexOf(label); });
+
+      pingpongData = [];
+      for (let r = 1; r < values.length; r++) {
+        const row = values[r];
+        const get = (key) => (idx[key] >= 0 ? (row[idx[key]] ?? '') : '');
+        const orderId = String(get('orderId') || '').trim();
+        if (!orderId) continue;
+        pingpongData.push({
+          orderId, type: get('type'), status: get('status'),
+          partner: get('partner'), partnerAccount: get('partnerAccount'), partnerBank: get('partnerBank'),
+          amountIn: get('amountIn'), curIn: get('curIn'), amountOut: get('amountOut'), curOut: get('curOut'),
+          fee: get('fee'), curFee: get('curFee'), fxRate: get('fxRate'),
+          reference: get('reference'), originalOrderId: get('originalOrderId'),
+          createdAt: get('createdAt'), completedAt: get('completedAt')
+        });
+      }
+    }
+    pingpongPage = 1;
+    populatePingPongFilters();
+    renderPingPongTable();
+  } catch (e) {
+    statusEl.textContent = 'Lỗi khi đọc sheet: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Tải lại';
+  }
+}
+
+function populatePingPongFilters(){
+  const sel = document.getElementById('pingpongTypeFilter');
+  const prev = sel.value;
+  const types = [...new Set(pingpongData.map(o => o.type).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">Tất cả loại</option>' +
+    types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+  if (types.includes(prev)) sel.value = prev;
+}
+
+function renderPingPongTable(){
+  const filterRaw = document.getElementById('pingpongFilter').value.trim().toLowerCase();
+  const typeFilter = document.getElementById('pingpongTypeFilter').value;
+
+  let filtered = pingpongData;
+  if (typeFilter) filtered = filtered.filter(o => o.type === typeFilter);
+  if (filterRaw) {
+    filtered = filtered.filter(o =>
+      String(o.orderId).toLowerCase().includes(filterRaw) ||
+      String(o.partner).toLowerCase().includes(filterRaw) ||
+      String(o.reference).toLowerCase().includes(filterRaw) ||
+      String(o.originalOrderId).toLowerCase().includes(filterRaw)
+    );
+  }
+
+  const isFiltered = !!(filterRaw || typeFilter);
+  document.getElementById('pingpongStatus').textContent =
+    `${filtered.length} giao dịch` + (isFiltered ? ` (lọc từ tổng ${pingpongData.length})` : ` (tổng ${pingpongData.length})`);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PINGPONG_PAGE_SIZE));
+  if (pingpongPage > totalPages) pingpongPage = totalPages;
+  const startIdx = (pingpongPage - 1) * PINGPONG_PAGE_SIZE;
+  const pageItems = filtered.slice(startIdx, startIdx + PINGPONG_PAGE_SIZE);
+
+  const fmtMoney = (v, cur) => {
+    const n = parseMoneyValue(v);
+    if (isNaN(n) || n === 0) return '—';
+    return formatMoneyValue(n) + (cur ? ' ' + cur : '');
+  };
+
+  let html = '<table><thead><tr><th>Order ID</th><th>Loại</th><th>Trạng thái</th><th>Đối tác</th><th>Tiền vào</th><th>Tiền ra</th><th>Phí</th><th>Thời gian tạo</th></tr></thead><tbody>';
+  pageItems.forEach((o) => {
+    const globalIdx = pingpongData.indexOf(o);
+    html += `<tr>
+      <td>${escapeHtml(o.orderId)}</td>
+      <td>${escapeHtml(o.type)}</td>
+      <td>${escapeHtml(o.status)}</td>
+      <td>${escapeHtml(o.partner)}</td>
+      <td style="color:var(--green);font-weight:600;">${fmtMoney(o.amountIn, o.curIn)}</td>
+      <td style="color:var(--red);font-weight:600;">${fmtMoney(o.amountOut, o.curOut)}</td>
+      <td>${fmtMoney(o.fee, o.curFee)}</td>
+      <td>${escapeHtml(o.createdAt)}</td>
+    </tr>
+    <tr class="detail-row hidden" id="pp-detail-${globalIdx}"><td colspan="8"></td></tr>`;
+  });
+  html += '</tbody></table>';
+  if (!pageItems.length) html = '<div style="padding:20px;text-align:center;color:var(--muted);">Không có giao dịch nào khớp — bấm "Tải danh sách" nếu chưa tải, hoặc kiểm tra lại cấu hình sheet.</div>';
+  document.getElementById('pingpongTableWrap').innerHTML = html;
+
+  document.getElementById('pingpongPager').innerHTML = `
+    <button class="btn-secondary" onclick="changePingPongPage(-1)" ${pingpongPage <= 1 ? 'disabled' : ''}>‹ Trước</button>
+    <span style="margin:0 12px;color:var(--muted);font-size:13px;">Trang ${pingpongPage}/${totalPages}</span>
+    <button class="btn-secondary" onclick="changePingPongPage(1)" ${pingpongPage >= totalPages ? 'disabled' : ''}>Sau ›</button>
+  `;
+}
+function changePingPongPage(delta){ pingpongPage += delta; renderPingPongTable(); }
+
+document.getElementById('pingpongLoadBtn').addEventListener('click', loadPingPongData);
+document.getElementById('pingpongFilter').addEventListener('input', () => { pingpongPage = 1; renderPingPongTable(); });
+document.getElementById('pingpongTypeFilter').addEventListener('change', () => { pingpongPage = 1; renderPingPongTable(); });
+fillPingPongConfigForm();
+
+/* ---------- Tabbar ---------- */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+  });
+});
+</script>
+</body>
+</html>
