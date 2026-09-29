@@ -115,6 +115,9 @@ function syncNow() {
           return;
         }
         var costColIdx = resolveColIndex(values, headerRowIdx, src.costCol);
+        if (src.costCol && costColIdx === -1) {
+          errors.push(src.name + ': tab "' + tabName + '" không tìm thấy cột Cost ("' + src.costCol + '") - cột Cost sẽ để trống');
+        }
 
         var added = 0;
         for (var r = headerRowIdx + 1; r < values.length; r++) {
