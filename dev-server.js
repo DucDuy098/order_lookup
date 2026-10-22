@@ -4,7 +4,11 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-process.loadEnvFile(path.join(__dirname, '.env.local'));
+try {
+  process.loadEnvFile(path.join(__dirname, '.env.local'));
+} catch (e) {
+  // no .env.local in production; env vars come from the platform
+}
 
 const PORT = process.env.PORT || 3000;
 const API_DIR = path.join(__dirname, 'api');
