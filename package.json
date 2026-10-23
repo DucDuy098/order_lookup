@@ -4,7 +4,8 @@
   "private": true,
   "dependencies": {
     "bcryptjs": "^2.4.3",
+    "googleapis": "^140.0.0",
     "jsonwebtoken": "^9.0.2",
-    "googleapis": "^140.0.0"
+    "pg": "^8.23.1"
   }
 }

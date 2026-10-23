@@ -1,5 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { Pool } = require('pg');
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -13,16 +16,11 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
   try {
-    const r = await fetch(
-      `${SUPABASE_URL}/rest/v1/app_users?username=eq.${encodeURIComponent(username)}&select=*`,
-      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    const { rows } = await pool.query(
+      'SELECT username, password_hash FROM app_users WHERE username = $1',
+      [username]
     );
-    if (!r.ok) throw new Error('Supabase lỗi (HTTP ' + r.status + ')');
-    const rows = await r.json();
     const user = rows[0];
 
     if (!user || !bcrypt.compareSync(password, user.password_hash)) {
