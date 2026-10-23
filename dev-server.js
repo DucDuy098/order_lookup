@@ -63,6 +63,17 @@ const server = http.createServer(async (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return fs.createReadStream(path.join(__dirname, 'index.html')).pipe(res);
   }
+
+  // Static design-system showcase (CSS + HTML only).
+  if (url.pathname.startsWith('/design-system/')) {
+    const rel = url.pathname.slice('/design-system/'.length).replace(/[^a-zA-Z0-9_.-]/g, '');
+    const file = path.join(__dirname, 'design-system', rel || 'index.html');
+    if (fs.existsSync(file) && (file.endsWith('.html') || file.endsWith('.css'))) {
+      res.setHeader('Content-Type', file.endsWith('.css') ? 'text/css' : 'text/html; charset=utf-8');
+      return fs.createReadStream(file).pipe(res);
+    }
+  }
+
   res.statusCode = 404;
   res.end('Not found');
 });

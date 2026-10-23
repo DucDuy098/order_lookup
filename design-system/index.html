@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Order Nexus — Design System</title>
+<link rel="stylesheet" href="design-system.css">
+<style>
+  .ds-section{margin-bottom:40px;}
+  .ds-swatches{display:flex;gap:12px;flex-wrap:wrap;}
+  .ds-swatch{width:120px;}
+  .ds-swatch-color{height:56px;border-radius:8px;border:1px solid var(--line);margin-bottom:6px;}
+  .ds-swatch small{color:var(--text-dim);font-size:11px;}
+  .ds-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+</style>
+</head>
+<body>
+<div class="app-main" style="margin-left:0;">
+<div class="container">
+
+  <div class="hero">
+    <div class="hero-badge">Order Nexus</div>
+    <h1>Design System</h1>
+    <div class="sub">Tokens and components extracted from the app shell — reuse via design-system.css.</div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Colors</p>
+    <div class="ds-swatches">
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--ink);"></div><small>--ink</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--panel);"></div><small>--panel</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--panel-2);"></div><small>--panel-2</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--text);"></div><small>--text</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--text-dim);"></div><small>--text-dim</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--accent);"></div><small>--accent</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--accent-strong);"></div><small>--accent-strong</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--green);"></div><small>--green</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--amber);"></div><small>--amber</small></div>
+      <div class="ds-swatch"><div class="ds-swatch-color" style="background:var(--red);"></div><small>--red</small></div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Buttons</p>
+    <div class="ds-row">
+      <button class="btn-primary">Primary</button>
+      <button class="btn-secondary">Secondary</button>
+      <button class="btn-danger">Delete</button>
+      <button class="btn-primary" disabled>Disabled</button>
+      <button class="btn-secondary btn-mini">Mini</button>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Form fields</p>
+    <div class="ds-row">
+      <div class="field"><label>Label</label><input placeholder="Placeholder text"></div>
+      <div class="field"><label>Select</label><select><option>Option A</option><option>Option B</option></select></div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Card</p>
+    <div class="card" style="max-width:420px;">
+      <p class="card-title" style="margin-bottom:8px;">Card title</p>
+      <div class="sub">Card body content goes here.</div>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Table</p>
+    <table style="max-width:600px;">
+      <thead><tr><th>Name</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr><td>Row one</td><td><span class="badge">Badge</span></td><td><a href="#">link</a></td></tr>
+        <tr><td>Row two</td><td><span class="badge">Badge</span></td><td><a href="#">link</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Result states</p>
+    <div class="result hit"><div class="result-header">✓ Hit — success state</div></div>
+    <div class="result miss"><div class="result-header">Miss — neutral state</div></div>
+    <div class="result error"><div class="result-header">Error — failure state</div></div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Tabs</p>
+    <div class="tabbar" style="flex-direction:row;max-width:400px;">
+      <button class="tab-btn active">Active tab</button>
+      <button class="tab-btn">Tab</button>
+      <button class="tab-btn">Tab</button>
+    </div>
+  </div>
+
+  <div class="ds-section">
+    <p class="card-title" style="margin-bottom:10px;">Login card</p>
+    <div class="login-card" style="position:static;margin:0;">
+      <div class="login-logo">Order Nexus</div>
+      <h1 class="login-title">Sign in</h1>
+      <p class="login-sub">Sample login card component.</p>
+      <div class="field" style="margin-bottom:12px;text-align:left;"><label>Username</label><input style="width:100%;"></div>
+      <button class="btn-primary">Sign in</button>
+    </div>
+  </div>
+
+  <footer>Order Nexus Design System</footer>
+</div>
+</div>
+</body>
+</html>
