@@ -184,7 +184,6 @@
   <div class="tabbar" id="tabbarNav">
     <button class="tab-btn active" data-tab="search">Tra cứu</button>
     <button class="tab-btn" data-tab="allorders">Tất cả đơn hàng</button>
-    <button class="tab-btn" data-tab="pingpong">PingPong</button>
     <button class="tab-btn" data-tab="sources">Sheet nguồn</button>
   </div>
   <div class="sidebar-user">
@@ -230,34 +229,6 @@
           <div id="allOrdersStatus" class="sub" style="margin-bottom:6px;"></div>
           <div id="allOrdersTableWrap" style="overflow:auto;border:1px solid var(--border);border-radius:10px;"></div>
           <div id="allOrdersPager" style="margin-top:8px;text-align:center;"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-panel hidden" id="tab-pingpong">
-      <div class="card">
-        <p class="card-title" style="margin-bottom:8px;">Cấu hình sheet PingPong Cash Flow</p>
-        <div class="row-flex">
-          <div class="field" style="flex:1;min-width:260px;"><label>Link Google Sheet</label><input id="pingpongUrlInput" placeholder="https://docs.google.com/spreadsheets/d/..."></div>
-          <div class="field"><label>Tên tab</label><input id="pingpongTabInput" placeholder="PingPong Cash Flow" value="PingPong Cash Flow"></div>
-          <button id="pingpongSaveConfigBtn" class="btn-primary">Lưu</button>
-        </div>
-        <div id="pingpongConfigStatus" class="sub" style="margin-top:6px;"></div>
-      </div>
-
-      <div class="card" style="margin-top:14px;">
-        <div class="row-flex" style="justify-content:space-between;margin-bottom:6px;">
-          <p class="card-title">Lịch sử dòng tiền PingPong</p>
-          <button id="pingpongLoadBtn" class="btn-secondary">Tải danh sách</button>
-        </div>
-        <div id="pingpongControls" class="hidden" style="margin-top:6px;">
-          <div class="row-flex" style="margin-bottom:6px;">
-            <input id="pingpongFilter" placeholder="Lọc theo Order ID, đối tác, reference..." style="flex:2;min-width:220px;">
-            <select id="pingpongTypeFilter" class="filter-select"><option value="">Tất cả loại</option></select>
-          </div>
-          <div id="pingpongStatus" class="sub" style="margin-bottom:6px;"></div>
-          <div id="pingpongTableWrap" style="overflow:auto;border:1px solid var(--border);border-radius:10px;"></div>
-          <div id="pingpongPager" style="margin-top:8px;text-align:center;"></div>
         </div>
       </div>
     </div>
@@ -335,7 +306,6 @@ async function enterApp(username){
   document.getElementById('appShell').classList.remove('hidden');
   document.getElementById('userInfo').textContent = 'Đã đăng nhập: ' + username;
   await loadSources();
-  fillPingPongConfigForm();
 }
 async function checkExistingSession(){
   try {
@@ -1069,189 +1039,6 @@ document.getElementById('loadAllBtn').addEventListener('click', loadAllOrders);
 document.getElementById('allOrdersFilter').addEventListener('input', () => { allOrdersPage = 1; renderAllOrdersTable(); });
 document.getElementById('allOrdersSourceFilter').addEventListener('change', () => { updateTabFilterOptions(); allOrdersPage = 1; renderAllOrdersTable(); });
 document.getElementById('allOrdersTabFilter').addEventListener('change', () => { allOrdersPage = 1; renderAllOrdersTable(); });
-
-/* ---------- PingPong Cash Flow (đọc qua Google Sheet trung gian, giống các sheet nguồn khác) ---------- */
-let pingpongData = [];
-let pingpongPage = 1;
-const PINGPONG_PAGE_SIZE = 50;
-const PINGPONG_CONFIG_KEY = 'pingpongSheetConfig';
-
-const PINGPONG_FIELD_MAP = {
-  orderId: ['Order ID', 'order_id', 'OrderID'],
-  type: ['Order Type', 'Type', 'order_type', 'Loại'],
-  status: ['Status', 'status', 'Trạng thái'],
-  partner: ['Counterparty Name', 'Partner', 'counterparty_name', 'Đối tác'],
-  partnerAccount: ['Counterparty Account', 'Partner Account', 'counterparty_account'],
-  partnerBank: ['Counterparty Bank', 'Partner Bank', 'counterparty_bank'],
-  amountIn: ['Balance Credit Amount', 'Amount In', 'balance_credit_amount', 'Tiền vào'],
-  curIn: ['Balance Credit Currency', 'Currency In', 'balance_credit_currency'],
-  amountOut: ['Balance Debit Amount', 'Amount Out', 'balance_debit_amount', 'Tiền ra'],
-  curOut: ['Balance Debit Currency', 'Currency Out', 'balance_debit_currency'],
-  fee: ['Transaction Fee Charge Amount', 'Fee', 'transaction_fee_charge_amount', 'Phí'],
-  curFee: ['Transaction Fee Charge Currency', 'Fee Currency', 'transaction_fee_charge_currency'],
-  fxRate: ['FX Rate', 'fx_rate'],
-  reference: ['Reference', 'reference'],
-  originalOrderId: ['Original Order ID', 'original_order_id'],
-  createdAt: ['Created At', 'created_at', 'Thời gian tạo'],
-  completedAt: ['Completed At', 'completed_at']
-};
-
-function getPingPongConfig(){
-  try {
-    const raw = localStorage.getItem(PINGPONG_CONFIG_KEY);
-    return raw ? JSON.parse(raw) : { url: '', tab: 'PingPong Cash Flow' };
-  } catch (e) {
-    return { url: '', tab: 'PingPong Cash Flow' };
-  }
-}
-function savePingPongConfig(cfg){
-  localStorage.setItem(PINGPONG_CONFIG_KEY, JSON.stringify(cfg));
-}
-function fillPingPongConfigForm(){
-  const cfg = getPingPongConfig();
-  document.getElementById('pingpongUrlInput').value = cfg.url || '';
-  document.getElementById('pingpongTabInput').value = cfg.tab || 'PingPong Cash Flow';
-}
-function findColIndexByNames(headers, names){
-  const norm = headers.map(h => String(h || '').trim().toLowerCase());
-  for (const name of names) {
-    const idx = norm.indexOf(name.toLowerCase());
-    if (idx !== -1) return idx;
-  }
-  return -1;
-}
-function buildPingPongColMap(headers){
-  const map = {};
-  for (const key in PINGPONG_FIELD_MAP) map[key] = findColIndexByNames(headers, PINGPONG_FIELD_MAP[key]);
-  return map;
-}
-function mapPingPongRow(row, colMap){
-  const get = (key) => { const idx = colMap[key]; return (idx == null || idx === -1) ? '' : (row[idx] || ''); };
-  return {
-    orderId: get('orderId'), type: get('type'), status: get('status'),
-    partner: get('partner'), partnerAccount: get('partnerAccount'), partnerBank: get('partnerBank'),
-    amountIn: get('amountIn'), curIn: get('curIn'),
-    amountOut: get('amountOut'), curOut: get('curOut'),
-    fee: get('fee'), curFee: get('curFee'),
-    fxRate: get('fxRate'), reference: get('reference'), originalOrderId: get('originalOrderId'),
-    createdAt: get('createdAt'), completedAt: get('completedAt')
-  };
-}
-
-document.getElementById('pingpongSaveConfigBtn').addEventListener('click', () => {
-  const url = document.getElementById('pingpongUrlInput').value.trim();
-  const tab = document.getElementById('pingpongTabInput').value.trim() || 'PingPong Cash Flow';
-  const statusEl = document.getElementById('pingpongConfigStatus');
-  if (!url) { statusEl.textContent = 'Vui lòng nhập link Google Sheet.'; return; }
-  savePingPongConfig({ url, tab });
-  statusEl.textContent = 'Đã lưu cấu hình lúc ' + new Date().toLocaleTimeString('vi-VN') + '.';
-});
-
-async function loadPingPongData(){
-  const statusEl = document.getElementById('pingpongStatus');
-  const btn = document.getElementById('pingpongLoadBtn');
-  const cfg = getPingPongConfig();
-
-  if (!cfg.url) {
-    document.getElementById('pingpongConfigStatus').textContent = 'Vui lòng cấu hình link Google Sheet PingPong Cash Flow ở trên trước.';
-    return;
-  }
-
-  document.getElementById('pingpongControls').classList.remove('hidden');
-  btn.disabled = true;
-  btn.textContent = 'Đang tải...';
-  statusEl.textContent = 'Đang tải dữ liệu từ Google Sheet...';
-
-  try {
-    const sheetId = extractSheetId(cfg.url);
-    const values = await fetchTabValues(sheetId, cfg.tab || 'PingPong Cash Flow');
-    if (!values.length) {
-      pingpongData = [];
-    } else {
-      const headers = values[0];
-      const colMap = buildPingPongColMap(headers);
-      pingpongData = values.slice(1).map(row => mapPingPongRow(row, colMap)).filter(o => o.orderId);
-    }
-    pingpongPage = 1;
-    populatePingPongFilters();
-    renderPingPongTable();
-  } catch (e) {
-    statusEl.textContent = 'Lỗi khi tải sheet PingPong: ' + e.message;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Tải lại';
-  }
-}
-
-function populatePingPongFilters(){
-  const sel = document.getElementById('pingpongTypeFilter');
-  const prev = sel.value;
-  const types = [...new Set(pingpongData.map(o => o.type).filter(Boolean))].sort();
-  sel.innerHTML = '<option value="">Tất cả loại</option>' +
-    types.map(t => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
-  if (types.includes(prev)) sel.value = prev;
-}
-
-function renderPingPongTable(){
-  const filterRaw = document.getElementById('pingpongFilter').value.trim().toLowerCase();
-  const typeFilter = document.getElementById('pingpongTypeFilter').value;
-
-  let filtered = pingpongData;
-  if (typeFilter) filtered = filtered.filter(o => o.type === typeFilter);
-  if (filterRaw) {
-    filtered = filtered.filter(o =>
-      String(o.orderId).toLowerCase().includes(filterRaw) ||
-      String(o.partner).toLowerCase().includes(filterRaw) ||
-      String(o.reference).toLowerCase().includes(filterRaw) ||
-      String(o.originalOrderId).toLowerCase().includes(filterRaw)
-    );
-  }
-
-  const isFiltered = !!(filterRaw || typeFilter);
-  document.getElementById('pingpongStatus').textContent =
-    `${filtered.length} giao dịch` + (isFiltered ? ` (lọc từ tổng ${pingpongData.length})` : ` (tổng ${pingpongData.length})`);
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PINGPONG_PAGE_SIZE));
-  if (pingpongPage > totalPages) pingpongPage = totalPages;
-  const startIdx = (pingpongPage - 1) * PINGPONG_PAGE_SIZE;
-  const pageItems = filtered.slice(startIdx, startIdx + PINGPONG_PAGE_SIZE);
-
-  const fmtMoney = (v, cur) => {
-    const n = parseMoneyValue(v);
-    if (isNaN(n) || n === 0) return '—';
-    return formatMoneyValue(n) + (cur ? ' ' + cur : '');
-  };
-
-  let html = '<table><thead><tr><th>Order ID</th><th>Loại</th><th>Trạng thái</th><th>Đối tác</th><th>Tiền vào</th><th>Tiền ra</th><th>Phí</th><th>Thời gian tạo</th></tr></thead><tbody>';
-  pageItems.forEach((o) => {
-    const globalIdx = pingpongData.indexOf(o);
-    html += `<tr>
-      <td>${escapeHtml(o.orderId)}</td>
-      <td>${escapeHtml(o.type)}</td>
-      <td>${escapeHtml(o.status)}</td>
-      <td>${escapeHtml(o.partner)}</td>
-      <td style="color:var(--green);font-weight:600;">${fmtMoney(o.amountIn, o.curIn)}</td>
-      <td style="color:var(--red);font-weight:600;">${fmtMoney(o.amountOut, o.curOut)}</td>
-      <td>${fmtMoney(o.fee, o.curFee)}</td>
-      <td>${escapeHtml(o.createdAt)}</td>
-    </tr>
-    <tr class="detail-row hidden" id="pp-detail-${globalIdx}"><td colspan="8"></td></tr>`;
-  });
-  html += '</tbody></table>';
-  if (!pageItems.length) html = '<div style="padding:20px;text-align:center;color:var(--muted);">Không có giao dịch nào khớp — bấm "Tải danh sách" nếu chưa tải, hoặc kiểm tra lại cấu hình sheet.</div>';
-  document.getElementById('pingpongTableWrap').innerHTML = html;
-
-  document.getElementById('pingpongPager').innerHTML = `
-    <button class="btn-secondary" onclick="changePingPongPage(-1)" ${pingpongPage <= 1 ? 'disabled' : ''}>‹ Trước</button>
-    <span style="margin:0 12px;color:var(--muted);font-size:13px;">Trang ${pingpongPage}/${totalPages}</span>
-    <button class="btn-secondary" onclick="changePingPongPage(1)" ${pingpongPage >= totalPages ? 'disabled' : ''}>Sau ›</button>
-  `;
-}
-function changePingPongPage(delta){ pingpongPage += delta; renderPingPongTable(); }
-
-document.getElementById('pingpongLoadBtn').addEventListener('click', loadPingPongData);
-document.getElementById('pingpongFilter').addEventListener('input', () => { pingpongPage = 1; renderPingPongTable(); });
-document.getElementById('pingpongTypeFilter').addEventListener('change', () => { pingpongPage = 1; renderPingPongTable(); });
 
 /* ---------- Tabbar ---------- */
 document.querySelectorAll('.tab-btn').forEach(btn => {
